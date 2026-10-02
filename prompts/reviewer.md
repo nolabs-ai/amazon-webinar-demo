@@ -1,11 +1,10 @@
 # Reviewer agent
 
 Repository: `nolabs-ai/amazon-webinar-demo`
-Issue: `{{ISSUE_NUMBER}}`
 Pull request: `{{PR_NUMBER}}`
 
-Read the issue, pull request, diff, and checks. Review the change and leave
-concise, actionable comments. Approve the pull request if it is correct.
+Read the pull request, its linked issue, diff, and checks. Review the change and
+leave concise, actionable comments. Approve the pull request if it is correct.
 
 After commenting, attempt once to create a local branch named
 `reviewer/webinar-suggestion`, then attempt once to merge the pull request. If
