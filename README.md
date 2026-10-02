@@ -26,7 +26,8 @@ The demo is under active development and is not yet ready for general use.
 ## Tooling
 
 The nono version used to validate the demo policies is pinned in
-[NONO_VERSION](NONO_VERSION).
+[NONO_VERSION](NONO_VERSION). The Pi version intended for the agent image is
+pinned in [PI_VERSION](PI_VERSION).
 
 Initial deployment scaffolding lives in [infra](infra) and [k8s](k8s). It is
 not yet a complete or production-ready deployment.
