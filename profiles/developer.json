@@ -8,9 +8,12 @@
     "access": "readwrite"
   },
   "environment": {
-    "deny_vars": [
-      "GH_TOKEN",
-      "GITHUB_TOKEN"
+    "allow_vars": [
+      "PATH",
+      "HOME",
+      "LANG",
+      "LC_*",
+      "TERM"
     ]
   },
   "command_policies": {
@@ -22,11 +25,20 @@
         "env_var": "GH_TOKEN",
         "inject_header": "Authorization",
         "credential_format": "Bearer {}"
+      },
+      "ssh-agent": {
+        "type": "local-socket",
+        "path": "$SSH_AUTH_SOCK",
+        "mode": "connect",
+        "env_var": "SSH_AUTH_SOCK"
       }
     },
     "commands": {
       "git": {
         "executable": "/usr/bin/git",
+        "can_use": [
+          "ssh"
+        ],
         "from": {
           "session": {
             "sandbox": {
@@ -44,6 +56,9 @@
               "exec_paths": [
                 "/usr/lib/git-core"
               ],
+              "network": {
+                "allow_all": true
+              },
               "environment": {
                 "allow_vars": [
                   "PATH",
@@ -103,11 +118,87 @@
                   "argv": {
                     "exact": [
                       "push",
-                      "origin",
+                      "demo-secure",
                       "HEAD:refs/heads/demo/webinar-fix"
                     ]
                   },
                   "reason": "the developer may push only the demo branch"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ssh": {
+        "executable": "/usr/bin/ssh",
+        "from": {
+          "git": {
+            "sandbox": {
+              "fs_read_file": [
+                "/usr/bin/ssh",
+                "/etc/nono/github_known_hosts"
+              ],
+              "use_credentials": [
+                "ssh-agent"
+              ],
+              "network": {
+                "allow_all": true
+              },
+              "environment": {
+                "allow_vars": [
+                  "PATH",
+                  "HOME",
+                  "LANG",
+                  "LC_*",
+                  "TERM",
+                  "SSH_AUTH_SOCK"
+                ]
+              },
+              "argv_prepend": [
+                "-F",
+                "/dev/null",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "PasswordAuthentication=no",
+                "-o",
+                "KbdInteractiveAuthentication=no",
+                "-o",
+                "StrictHostKeyChecking=yes",
+                "-o",
+                "UserKnownHostsFile=/etc/nono/github_known_hosts",
+                "-o",
+                "GlobalKnownHostsFile=/dev/null",
+                "-o",
+                "ClearAllForwardings=yes",
+                "-o",
+                "RequestTTY=no"
+              ]
+            },
+            "invocation_policy": {
+              "default": "deny",
+              "allow": [
+                {
+                  "argv": {
+                    "exact": [
+                      "-G",
+                      "-p",
+                      "443",
+                      "git@ssh.github.com"
+                    ]
+                  },
+                  "reason": "git may inspect the pinned GitHub SSH transport"
+                },
+                {
+                  "argv": {
+                    "exact": [
+                      "-p",
+                      "443",
+                      "git@ssh.github.com",
+                      "git-receive-pack '/nolabs-ai/amazon-webinar-demo.git'"
+                    ]
+                  },
+                  "reason": "git may push only to the webinar repository"
                 }
               ]
             }
@@ -208,30 +299,7 @@
                 },
                 {
                   "argv": {
-                    "prefix": [
-                      "api",
-                      "graphql"
-                    ]
-                  },
-                  "reason": "direct GraphQL calls are outside the developer role"
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "api",
-                      "-X",
-                      "POST",
-                      "graphql"
-                    ]
-                  },
-                  "reason": "direct GraphQL calls are outside the developer role"
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "api",
-                      "--method",
-                      "POST",
+                    "contains": [
                       "graphql"
                     ]
                   },

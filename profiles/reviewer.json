@@ -7,10 +7,16 @@
   "workdir": {
     "access": "read"
   },
+  "network": {
+    "block": true
+  },
   "environment": {
-    "deny_vars": [
-      "GH_TOKEN",
-      "GITHUB_TOKEN"
+    "allow_vars": [
+      "PATH",
+      "HOME",
+      "LANG",
+      "LC_*",
+      "TERM"
     ]
   },
   "command_policies": {
@@ -129,6 +135,12 @@
           }
         }
       },
+      "ssh": {
+        "executable": "/usr/bin/ssh",
+        "from": {
+          "session": "deny"
+        }
+      },
       "gh": {
         "executable": "/usr/bin/gh",
         "from": {
@@ -240,30 +252,15 @@
                 },
                 {
                   "argv": {
-                    "prefix": [
-                      "api",
-                      "graphql"
+                    "contains": [
+                      "-r"
                     ]
                   },
-                  "reason": "direct GraphQL calls are outside the reviewer role"
+                  "reason": "the reviewer may comment or approve but not request changes"
                 },
                 {
                   "argv": {
-                    "prefix": [
-                      "api",
-                      "-X",
-                      "POST",
-                      "graphql"
-                    ]
-                  },
-                  "reason": "direct GraphQL calls are outside the reviewer role"
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "api",
-                      "--method",
-                      "POST",
+                    "contains": [
                       "graphql"
                     ]
                   },
