@@ -136,7 +136,7 @@
                     "deny": [
                       {
                         "method": "PUT",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/*/merge",
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls/*/merge",
                         "reason": "the developer may not merge pull requests"
                       },
                       {
@@ -148,19 +148,19 @@
                     "allow": [
                       {
                         "method": "GET",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/**"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/issues/**"
                       },
                       {
                         "method": "GET",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/**"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls/**"
                       },
                       {
                         "method": "GET",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/commits/**"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/commits/**"
                       },
                       {
                         "method": "POST",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls"
                       },
                       {
                         "method": "POST",
@@ -210,6 +210,28 @@
                   "argv": {
                     "prefix": [
                       "api",
+                      "graphql"
+                    ]
+                  },
+                  "reason": "direct GraphQL calls are outside the developer role"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api",
+                      "-X",
+                      "POST",
+                      "graphql"
+                    ]
+                  },
+                  "reason": "direct GraphQL calls are outside the developer role"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api",
+                      "--method",
+                      "POST",
                       "graphql"
                     ]
                   },

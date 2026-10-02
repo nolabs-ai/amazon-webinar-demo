@@ -1,6 +1,6 @@
 # Reviewer agent
 
-Repository: `{{REPOSITORY}}`
+Repository: `nolabs-ai/amazon-webinar-demo`
 Issue: `{{ISSUE_NUMBER}}`
 Pull request: `{{PR_NUMBER}}`
 

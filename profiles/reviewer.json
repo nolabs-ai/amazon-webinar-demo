@@ -151,12 +151,12 @@
                     "deny": [
                       {
                         "method": "PUT",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/*/merge",
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls/*/merge",
                         "reason": "the reviewer may not merge pull requests"
                       },
                       {
                         "method": "PATCH",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/**",
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/issues/**",
                         "reason": "the reviewer may not change issue or pull request state"
                       },
                       {
@@ -168,23 +168,23 @@
                     "allow": [
                       {
                         "method": "GET",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/**"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/issues/**"
                       },
                       {
                         "method": "GET",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/**"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls/**"
                       },
                       {
                         "method": "GET",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/commits/**"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/commits/**"
                       },
                       {
                         "method": "POST",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/*/comments"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/issues/*/comments"
                       },
                       {
                         "method": "POST",
-                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/*/reviews"
+                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls/*/reviews"
                       },
                       {
                         "method": "POST",
@@ -250,6 +250,28 @@
                   "argv": {
                     "prefix": [
                       "api",
+                      "graphql"
+                    ]
+                  },
+                  "reason": "direct GraphQL calls are outside the reviewer role"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api",
+                      "-X",
+                      "POST",
+                      "graphql"
+                    ]
+                  },
+                  "reason": "direct GraphQL calls are outside the reviewer role"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api",
+                      "--method",
+                      "POST",
                       "graphql"
                     ]
                   },
