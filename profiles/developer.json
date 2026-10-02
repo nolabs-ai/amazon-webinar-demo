@@ -1,0 +1,267 @@
+{
+  "meta": {
+    "name": "webinar-developer",
+    "version": "0.1.0",
+    "description": "Linux policy scaffold for the webinar developer agent"
+  },
+  "workdir": {
+    "access": "readwrite"
+  },
+  "environment": {
+    "deny_vars": [
+      "GH_TOKEN",
+      "GITHUB_TOKEN"
+    ]
+  },
+  "command_policies": {
+    "credentials": {
+      "github-api": {
+        "type": "proxy",
+        "upstream": "https://api.github.com",
+        "credential_key": "file:///run/secrets/github/token",
+        "env_var": "GH_TOKEN",
+        "inject_header": "Authorization",
+        "credential_format": "Bearer {}"
+      }
+    },
+    "commands": {
+      "git": {
+        "executable": "/usr/bin/git",
+        "from": {
+          "session": {
+            "sandbox": {
+              "fs_read": [
+                ".",
+                "/usr/lib/git-core"
+              ],
+              "fs_write": [
+                "."
+              ],
+              "fs_read_file": [
+                "/usr/bin/git",
+                "@git:config-files"
+              ],
+              "exec_paths": [
+                "/usr/lib/git-core"
+              ],
+              "environment": {
+                "allow_vars": [
+                  "PATH",
+                  "HOME",
+                  "LANG",
+                  "LC_*",
+                  "TERM"
+                ]
+              }
+            },
+            "invocation_policy": {
+              "default": "deny",
+              "allow": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "status"
+                    ]
+                  },
+                  "reason": "the developer may inspect repository status"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "diff"
+                    ]
+                  },
+                  "reason": "the developer may inspect changes"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "add"
+                    ]
+                  },
+                  "reason": "the developer may stage the fix"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "commit"
+                    ]
+                  },
+                  "reason": "the developer may commit the fix"
+                },
+                {
+                  "argv": {
+                    "exact": [
+                      "switch",
+                      "-c",
+                      "demo/webinar-fix"
+                    ]
+                  },
+                  "reason": "the developer may create only the demo branch"
+                },
+                {
+                  "argv": {
+                    "exact": [
+                      "push",
+                      "origin",
+                      "HEAD:refs/heads/demo/webinar-fix"
+                    ]
+                  },
+                  "reason": "the developer may push only the demo branch"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "gh": {
+        "executable": "/usr/bin/gh",
+        "from": {
+          "session": {
+            "sandbox": {
+              "fs_read": [
+                "."
+              ],
+              "fs_write": [
+                "/tmp"
+              ],
+              "fs_read_file": [
+                "/usr/bin/gh"
+              ],
+              "credentials": [
+                {
+                  "name": "github-api",
+                  "endpoint_policy": {
+                    "default": "deny",
+                    "deny": [
+                      {
+                        "method": "PUT",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/*/merge",
+                        "reason": "the developer may not merge pull requests"
+                      },
+                      {
+                        "method": "DELETE",
+                        "path": "/**",
+                        "reason": "the developer may not delete GitHub resources"
+                      }
+                    ],
+                    "allow": [
+                      {
+                        "method": "GET",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/**"
+                      },
+                      {
+                        "method": "GET",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/**"
+                      },
+                      {
+                        "method": "GET",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/commits/**"
+                      },
+                      {
+                        "method": "POST",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls"
+                      },
+                      {
+                        "method": "POST",
+                        "path": "/graphql"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "environment": {
+                "allow_vars": [
+                  "PATH",
+                  "HOME",
+                  "LANG",
+                  "LC_*",
+                  "TERM",
+                  "GH_TOKEN",
+                  "HTTP_PROXY",
+                  "HTTPS_PROXY",
+                  "NO_PROXY",
+                  "http_proxy",
+                  "https_proxy",
+                  "no_proxy",
+                  "NONO_PROXY_TOKEN",
+                  "SSL_CERT_FILE"
+                ],
+                "set_vars": {
+                  "GH_CONFIG_DIR": "/tmp/nono-gh-config",
+                  "GH_PROMPT_DISABLED": "1",
+                  "GH_NO_UPDATE_NOTIFIER": "1"
+                }
+              }
+            },
+            "invocation_policy": {
+              "default": "deny",
+              "deny": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "merge"
+                    ]
+                  },
+                  "reason": "the developer may open a pull request but not merge it"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api",
+                      "graphql"
+                    ]
+                  },
+                  "reason": "direct GraphQL calls are outside the developer role"
+                }
+              ],
+              "allow": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "issue",
+                      "view"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "create"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "view"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "checks"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api"
+                    ]
+                  },
+                  "reason": "direct API calls remain constrained by endpoint policy"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

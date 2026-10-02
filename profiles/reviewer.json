@@ -1,0 +1,323 @@
+{
+  "meta": {
+    "name": "webinar-reviewer",
+    "version": "0.1.0",
+    "description": "Linux policy scaffold for the webinar reviewer agent"
+  },
+  "workdir": {
+    "access": "read"
+  },
+  "environment": {
+    "deny_vars": [
+      "GH_TOKEN",
+      "GITHUB_TOKEN"
+    ]
+  },
+  "command_policies": {
+    "credentials": {
+      "github-api": {
+        "type": "proxy",
+        "upstream": "https://api.github.com",
+        "credential_key": "file:///run/secrets/github/token",
+        "env_var": "GH_TOKEN",
+        "inject_header": "Authorization",
+        "credential_format": "Bearer {}"
+      }
+    },
+    "commands": {
+      "git": {
+        "executable": "/usr/bin/git",
+        "from": {
+          "session": {
+            "sandbox": {
+              "fs_read": [
+                ".",
+                "/usr/lib/git-core"
+              ],
+              "fs_read_file": [
+                "/usr/bin/git",
+                "@git:config-files"
+              ],
+              "exec_paths": [
+                "/usr/lib/git-core"
+              ],
+              "environment": {
+                "allow_vars": [
+                  "PATH",
+                  "HOME",
+                  "LANG",
+                  "LC_*",
+                  "TERM"
+                ]
+              }
+            },
+            "invocation_policy": {
+              "default": "deny",
+              "deny": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "branch"
+                    ]
+                  },
+                  "reason": "the reviewer may not create or change branches"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "switch"
+                    ]
+                  },
+                  "reason": "the reviewer may not switch branches"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "checkout"
+                    ]
+                  },
+                  "reason": "the reviewer may not check out branches"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "commit"
+                    ]
+                  },
+                  "reason": "the reviewer may not commit changes"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "push"
+                    ]
+                  },
+                  "reason": "the reviewer may not push code"
+                }
+              ],
+              "allow": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "status"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "diff"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "log"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "show"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "gh": {
+        "executable": "/usr/bin/gh",
+        "from": {
+          "session": {
+            "sandbox": {
+              "fs_read": [
+                "."
+              ],
+              "fs_write": [
+                "/tmp"
+              ],
+              "fs_read_file": [
+                "/usr/bin/gh"
+              ],
+              "credentials": [
+                {
+                  "name": "github-api",
+                  "endpoint_policy": {
+                    "default": "deny",
+                    "deny": [
+                      {
+                        "method": "PUT",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/*/merge",
+                        "reason": "the reviewer may not merge pull requests"
+                      },
+                      {
+                        "method": "PATCH",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/**",
+                        "reason": "the reviewer may not change issue or pull request state"
+                      },
+                      {
+                        "method": "DELETE",
+                        "path": "/**",
+                        "reason": "the reviewer may not delete GitHub resources"
+                      }
+                    ],
+                    "allow": [
+                      {
+                        "method": "GET",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/**"
+                      },
+                      {
+                        "method": "GET",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/**"
+                      },
+                      {
+                        "method": "GET",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/commits/**"
+                      },
+                      {
+                        "method": "POST",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/issues/*/comments"
+                      },
+                      {
+                        "method": "POST",
+                        "path": "/repos/DEMO_OWNER/DEMO_REPO/pulls/*/reviews"
+                      },
+                      {
+                        "method": "POST",
+                        "path": "/graphql"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "environment": {
+                "allow_vars": [
+                  "PATH",
+                  "HOME",
+                  "LANG",
+                  "LC_*",
+                  "TERM",
+                  "GH_TOKEN",
+                  "HTTP_PROXY",
+                  "HTTPS_PROXY",
+                  "NO_PROXY",
+                  "http_proxy",
+                  "https_proxy",
+                  "no_proxy",
+                  "NONO_PROXY_TOKEN",
+                  "SSL_CERT_FILE"
+                ],
+                "set_vars": {
+                  "GH_CONFIG_DIR": "/tmp/nono-gh-config",
+                  "GH_PROMPT_DISABLED": "1",
+                  "GH_NO_UPDATE_NOTIFIER": "1"
+                }
+              }
+            },
+            "invocation_policy": {
+              "default": "deny",
+              "deny": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "merge"
+                    ]
+                  },
+                  "reason": "the reviewer may comment but not merge"
+                },
+                {
+                  "argv": {
+                    "contains": [
+                      "--approve"
+                    ]
+                  },
+                  "reason": "the reviewer may comment but not approve"
+                },
+                {
+                  "argv": {
+                    "contains": [
+                      "--request-changes"
+                    ]
+                  },
+                  "reason": "the demo reviewer submits comments only"
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api",
+                      "graphql"
+                    ]
+                  },
+                  "reason": "direct GraphQL calls are outside the reviewer role"
+                }
+              ],
+              "allow": [
+                {
+                  "argv": {
+                    "prefix": [
+                      "issue",
+                      "view"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "view"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "diff"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "checks"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "comment"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "pr",
+                      "review"
+                    ]
+                  }
+                },
+                {
+                  "argv": {
+                    "prefix": [
+                      "api"
+                    ]
+                  },
+                  "reason": "direct API calls remain constrained by endpoint policy"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

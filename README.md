@@ -23,6 +23,11 @@ tools they invoke inside the workload.
 
 The demo is under active development and is not yet ready for general use.
 
+## Tooling
+
+The nono version used to validate the demo policies is pinned in
+[NONO_VERSION](NONO_VERSION).
+
 ## Safety
 
 Development and rehearsal should use a dedicated disposable repository and
