@@ -19,6 +19,11 @@ artifacts/
 .vscode/
 *.swp
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # Temporary files
 tmp/
 *.log
