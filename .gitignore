@@ -1,0 +1,24 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+secrets/
+.kube/
+
+# nono runtime data
+.nono/
+audit/
+artifacts/
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Temporary files
+tmp/
+*.log
