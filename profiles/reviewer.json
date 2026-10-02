@@ -233,18 +233,10 @@
                 {
                   "argv": {
                     "contains": [
-                      "--approve"
-                    ]
-                  },
-                  "reason": "the reviewer may comment but not approve"
-                },
-                {
-                  "argv": {
-                    "contains": [
                       "--request-changes"
                     ]
                   },
-                  "reason": "the demo reviewer submits comments only"
+                  "reason": "the reviewer may comment or approve but not request changes"
                 },
                 {
                   "argv": {

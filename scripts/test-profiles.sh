@@ -125,8 +125,9 @@ expect_deny "developer PR merge" \
   run_developer gh pr merge 1 --repo nolabs-ai/amazon-webinar-demo
 expect_deny "reviewer PR merge" \
   run_reviewer gh pr merge 1 --repo nolabs-ai/amazon-webinar-demo
-expect_deny "reviewer approval" \
-  run_reviewer gh pr review 1 --repo nolabs-ai/amazon-webinar-demo --approve
+expect_deny "reviewer request changes" \
+  run_reviewer gh pr review 1 --repo nolabs-ai/amazon-webinar-demo \
+    --request-changes
 expect_l7_deny "reviewer low-level merge endpoint" \
   run_reviewer gh api --method PUT \
     repos/nolabs-ai/amazon-webinar-demo/pulls/1/merge
