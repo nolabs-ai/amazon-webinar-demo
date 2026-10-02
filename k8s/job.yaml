@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: github-agents-demo
+  namespace: github-agents-demo
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: github-agents-demo
+    spec:
+      runtimeClassName: kata-clh
+      serviceAccountName: github-agents-demo
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        katacontainers.io/kata-runtime: "true"
+      tolerations:
+        - key: kata
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agents
+          image: amazon-webinar-demo:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - /demo/bin/run-demo
+          env:
+            - name: AGENT_COMMAND
+              value: pi
+            - name: GITHUB_REPOSITORY
+              value: nolabs-ai/amazon-webinar-demo
+            - name: ISSUE_NUMBER
+              value: REPLACE_ME
+            - name: GIT_REMOTE
+              value: demo-secure
+            - name: GIT_BRANCH
+              value: demo/webinar-fix
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: github-credentials
+              mountPath: /run/secrets/github
+              readOnly: true
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: github-credentials
+          secret:
+            secretName: github-agents
+            defaultMode: 0400
+        - name: workspace
+          emptyDir: {}

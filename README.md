@@ -28,6 +28,9 @@ The demo is under active development and is not yet ready for general use.
 The nono version used to validate the demo policies is pinned in
 [NONO_VERSION](NONO_VERSION).
 
+Initial deployment scaffolding lives in [infra](infra) and [k8s](k8s). It is
+not yet a complete or production-ready deployment.
+
 ## Safety
 
 Development and rehearsal should use a dedicated disposable repository and

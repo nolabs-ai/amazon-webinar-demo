@@ -1,0 +1,13 @@
+nodeSelector:
+  katacontainers.io/kata-runtime: "true"
+
+tolerations:
+  - key: kata
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+shims:
+  disableAll: true
+  clh:
+    enabled: true
