@@ -32,6 +32,9 @@ pinned in [PI_VERSION](PI_VERSION).
 Initial deployment scaffolding lives in [infra](infra) and [k8s](k8s). It is
 not yet a complete or production-ready deployment.
 
+See [DEMO.md](DEMO.md) for the demo flow, repository layout, and remaining
+work.
+
 ## Safety
 
 Development and rehearsal should use a dedicated disposable repository and
