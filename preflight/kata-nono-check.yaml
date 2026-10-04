@@ -1,0 +1,258 @@
+# Throwaway Pod that checks nono's sandbox inside a kata-clh guest.
+# See preflight/README.md.
+#
+#   export PREFLIGHT_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/<repo>:<tag>
+#   envsubst '${PREFLIGHT_IMAGE}' < preflight/kata-nono-check.yaml | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kata-nono-check
+  labels:
+    app.kubernetes.io/name: kata-nono-check
+  # Pass the guest kernel an explicit LSM list. Requires CONFIG_SECURITY_LANDLOCK=y.
+  # annotations:
+  #   io.katacontainers.config.hypervisor.kernel_params: "lsm=landlock,lockdown,yama,integrity,selinux,bpf"
+spec:
+  runtimeClassName: kata-clh
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 5
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: kata
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: check
+      image: ${PREFLIGHT_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          set -u
+          export HOME=/home/node
+          PASS=0; FAIL=0; INCONC=0
+          FAILED=()
+          pass()  { echo "PASS     $1"; PASS=$((PASS+1)); }
+          fail()  { echo "FAIL     $1"; FAIL=$((FAIL+1)); FAILED+=("$2"); }
+          inconc(){ echo "INCONCL  $1"; INCONC=$((INCONC+1)); }
+          info()  { echo "INFO     $*"; }
+          section(){ echo; echo "=== $* ==="; }
+          show()  { sed -n "1,${2:-8}p" "$1" | sed 's/^/           | /'; }
+
+          # ------------------------------------------------------------------
+          section "0. guest environment"
+          echo "uname -r      : $(uname -r)"
+          echo "uname -m      : $(uname -m)"
+          echo "/sys/kernel/security/lsm : $(cat /sys/kernel/security/lsm 2>&1)"
+          echo "/proc/cmdline : $(cat /proc/cmdline 2>&1)"
+          echo "id            : $(id)"
+          echo "nono          : $(nono --version 2>&1)"
+          echo "cgroup        : $(cat /proc/self/cgroup 2>&1 | head -2 | tr '\n' ' ') fs=$(stat -f -c %T /sys/fs/cgroup 2>&1)"
+          if [ -r /proc/config.gz ]; then
+            echo "kernel config :"; zcat /proc/config.gz | grep -E '^(CONFIG_SECURITY_LANDLOCK|CONFIG_LSM=|CONFIG_SECCOMP_FILTER|CONFIG_SECURITY_YAMA|CONFIG_USER_NS)' | sed 's/^/           | /'
+          else
+            echo "kernel config : /proc/config.gz not available (CONFIG_IKCONFIG_PROC not set)"
+          fi
+          echo "filesystems   :"
+          for d in /workspace /scratch /run/secrets/github /tmp /; do
+            echo "           | $d -> $(stat -f -c %T "$d" 2>&1)"
+          done
+
+          section "0b. raw kernel probes (no nono)"
+          python3 - <<'PY'
+          import ctypes, os, platform, errno
+          libc = ctypes.CDLL(None, use_errno=True)
+          def sc(nr, *a):
+              r = libc.syscall(nr, *a)
+              return r, ctypes.get_errno()
+          arch = platform.machine()
+          SECCOMP = {"x86_64": 317, "aarch64": 277}.get(arch)
+          # landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION) -> ABI
+          r, e = sc(444, None, 0, 1)
+          if r >= 0:
+              print(f"LANDLOCK_ABI={r}")
+          else:
+              why = {errno.ENOSYS: "ENOSYS: not compiled in (CONFIG_SECURITY_LANDLOCK missing)",
+                     errno.EOPNOTSUPP: "EOPNOTSUPP: compiled in but not enabled at boot (lsm= list)"}.get(e, os.strerror(e))
+              print(f"LANDLOCK_ABI=none ({why})")
+          # seccomp(SECCOMP_GET_NOTIF_SIZES) succeeds only with SECCOMP_FILTER + user notif
+          if SECCOMP:
+              buf = ctypes.create_string_buffer(6)
+              r, e = sc(SECCOMP, 3, 0, buf)
+              print("SECCOMP_USER_NOTIF=" + ("yes" if r == 0 else f"no ({os.strerror(e)})"))
+          r, e = sc(434, 1, 0)   # pidfd_open(pid 1)
+          print("PIDFD_OPEN=" + ("yes" if r >= 0 else f"no ({os.strerror(e)})"))
+          if r >= 0: os.close(r)
+          print("NO_NEW_PRIVS=" + [l.split()[1] for l in open('/proc/self/status') if l.startswith('NoNewPrivs')][0])
+          print("SECCOMP_MODE=" + [l.split()[1] for l in open('/proc/self/status') if l.startswith('Seccomp:')][0] + " (0 = none applied inside the guest)")
+          PY
+          LL_ABI=$(python3 -c "
+          import ctypes
+          l=ctypes.CDLL(None,use_errno=True); print(l.syscall(444,None,0,1))" 2>/dev/null || echo -1)
+          echo "--- nono setup --check-only"
+          nono setup --check-only 2>&1 | sed 's/^/           | /' || true
+
+          # ------------------------------------------------------------------
+          section "1. test fixtures"
+          ROOT=/workspace/preflight
+          rm -rf "$ROOT"; mkdir -p "$ROOT/repo"
+          cp -r /demo/profiles "$ROOT/repo/profiles"
+          cd "$ROOT/repo"
+          git init -q
+          git config user.name "Preflight"; git config user.email "preflight@example.invalid"
+          printf 'fixture\n' > fixture.txt; git add fixture.txt; git commit -qm initial
+          mkdir -p /scratch/preflight
+          cp -r "$ROOT/repo" /scratch/preflight/repo 2>/dev/null || true
+
+          SECRET=/run/secrets/github/token
+          DUMMY=ghp_PREFLIGHTDUMMYTOKEN0000000000000000000000
+          printf '%s\n' "$DUMMY" > "$SECRET" && chmod 0444 "$SECRET" && info "dummy token written to $SECRET" \
+            || info "could not write $SECRET (is the emptyDir mounted?)"
+
+          run_as() { local p=$1; shift; nono run -s --no-audit --allow-cwd --profile "profiles/$p.json" -- "$@"; }
+          OUT=$(mktemp -d)
+
+          # ------------------------------------------------------------------
+          section "2. filesystem enforcement (Landlock)"
+          for base in /workspace/preflight /scratch/preflight; do
+            [ -d "$base/repo" ] || { info "skip $base (not present)"; continue; }
+            cd "$base/repo"
+            fstype=$(stat -f -c %T .)
+            rm -f f
+            # reviewer: write in cwd must be DENIED
+            if run_as reviewer sh -c 'printf x > f' >"$OUT/o" 2>"$OUT/e"; then rc=0; else rc=$?; fi
+            if [ "$rc" -ne 0 ] && [ ! -e f ]; then pass "reviewer write in cwd denied ($base, fs=$fstype, rc=$rc)"
+            else fail "reviewer write in cwd NOT denied ($base, fs=$fstype, rc=$rc, f exists=$([ -e f ] && echo yes || echo no))" "T1-reviewer-write"; show "$OUT/e"; fi
+            rm -f f
+            # developer: write in cwd must SUCCEED
+            if run_as developer sh -c 'printf x > f' >"$OUT/o" 2>"$OUT/e"; then rc=0; else rc=$?; fi
+            if [ "$rc" -eq 0 ] && [ "$(cat f 2>/dev/null)" = x ]; then pass "developer write in cwd allowed ($base, fs=$fstype)"
+            else fail "developer write in cwd failed ($base, fs=$fstype, rc=$rc)" "T2-developer-write"; show "$OUT/e"; fi
+            rm -f f
+          done
+          cd "$ROOT/repo"
+          # raw secret must not be readable from either role
+          for p in reviewer developer; do
+            if run_as $p cat "$SECRET" >"$OUT/o" 2>"$OUT/e"; then
+              fail "$p can read the raw token file" "T4-secret-readable"
+            else pass "$p cannot read $SECRET"; fi
+          done
+          # token must not leak through the session environment
+          if run_as developer env 2>/dev/null | grep -q "$DUMMY"; then fail "token present in sandbox env" "T4-token-in-env"
+          else pass "token absent from sandbox environment"; fi
+
+          # ------------------------------------------------------------------
+          section "3. network enforcement (reviewer curl)"
+          if curl -sS -m 10 -o /dev/null -w '%{http_code}' https://example.com >"$OUT/o" 2>"$OUT/e"; then
+            info "control curl outside nono: HTTP $(cat "$OUT/o")"; EGRESS=1
+          else
+            EGRESS=0; info "control curl outside nono FAILED: $(head -c 200 "$OUT/e")"
+          fi
+          if run_as reviewer curl -sS -m 8 https://example.com >"$OUT/o" 2>"$OUT/e"; then
+            fail "reviewer curl https://example.com SUCCEEDED (network not blocked)" "T3-reviewer-network"
+          elif [ "$EGRESS" = 1 ]; then pass "reviewer curl https://example.com denied (egress itself works)"; show "$OUT/e" 3
+          else inconc "reviewer curl denied, but egress is also broken, cannot attribute it to nono" ; fi
+
+          # ------------------------------------------------------------------
+          section "4. credential proxy (dummy token, command policy gh)"
+          # 4a: denied by nono's L7 endpoint policy, no upstream involved
+          if run_as reviewer gh api --method PUT repos/nolabs-ai/amazon-webinar-demo/pulls/1/merge >"$OUT/o" 2>"$OUT/e"; then rc=0; else rc=$?; fi
+          if [ "$rc" -ne 0 ] && grep -q '"error":"Forbidden"' "$OUT/o"; then pass "reviewer merge endpoint blocked by proxy endpoint policy (L7 Forbidden)"
+          else fail "reviewer merge endpoint not blocked by proxy (rc=$rc)" "T5-proxy-l7-deny"; show "$OUT/o"; show "$OUT/e"; fi
+          # 4b: allowed endpoint: proxy injects the dummy bearer, GitHub rejects it with 401
+          if run_as developer gh api repos/nolabs-ai/amazon-webinar-demo/issues/1 >"$OUT/o" 2>"$OUT/e"; then rc=0; else rc=$?; fi
+          if grep -qi 'bad credentials\|HTTP 401' "$OUT/o" "$OUT/e"; then
+            pass "developer gh api reached api.github.com through the proxy with the injected dummy token (401 Bad credentials)"
+          elif grep -q '"error":"Forbidden"' "$OUT/o"; then
+            fail "developer GET issues blocked by proxy policy" "T5-proxy-allow"; show "$OUT/o"
+          elif [ "$EGRESS" = 0 ]; then inconc "no egress, proxy upstream call could not be tested"
+          else fail "developer gh api: unexpected result (rc=$rc)" "T5-proxy-allow"; show "$OUT/o"; show "$OUT/e"; fi
+          # 4c: gh subcommand policy
+          if run_as developer gh pr merge 1 --repo nolabs-ai/amazon-webinar-demo >"$OUT/o" 2>"$OUT/e"; then
+            fail "developer gh pr merge allowed" "T5-gh-merge"; else pass "developer gh pr merge denied by invocation policy"; fi
+
+          # ------------------------------------------------------------------
+          section "5. command policy + ssh-agent brokering"
+          eval "$(ssh-agent -s)" >/dev/null
+          ssh-keygen -q -t ed25519 -N '' -f /tmp/preflight_key && ssh-add -q /tmp/preflight_key
+          info "throwaway ssh-agent at $SSH_AUTH_SOCK ($(ssh-add -l 2>&1 | head -1))"
+          cd "$ROOT/repo"
+          git remote add demo-secure ssh://git@ssh.github.com:443/nolabs-ai/amazon-webinar-demo.git 2>/dev/null || true
+          st=$(nono why --json --profile profiles/developer.json --command git -- push demo-secure HEAD:refs/heads/demo/webinar-fix 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status"))' 2>/dev/null)
+          [ "$st" = allowed ] && pass "policy: designated-branch push allowed" || fail "policy: designated push status=$st" "T6-policy-allow"
+          st=$(nono why --json --profile profiles/developer.json --command git -- push demo-secure HEAD:refs/heads/main 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status"))' 2>/dev/null)
+          [ "$st" = denied ] && pass "policy: push to main denied" || fail "policy: main push status=$st" "T6-policy-deny"
+          # the session itself must not be able to talk to the agent socket
+          if run_as developer python3 -c "import socket;s=socket.socket(socket.AF_UNIX);s.connect('$SSH_AUTH_SOCK');print('connected')" >"$OUT/o" 2>"$OUT/e"; then
+            fail "sandboxed session connected to the raw ssh-agent socket" "T6-agent-raw"
+          else pass "sandboxed session cannot connect to the raw ssh-agent socket"; fi
+          if run_as developer ssh -T git@ssh.github.com >"$OUT/o" 2>"$OUT/e"; then fail "developer direct ssh allowed" "T6-direct-ssh"
+          else pass "developer direct ssh denied"; fi
+          # end-to-end: git -> mediated ssh -> brokered agent socket -> GitHub (auth must FAIL: throwaway key)
+          if [ "$EGRESS" = 1 ]; then
+            timeout 60 nono run -s --no-audit --allow-cwd --profile profiles/developer.json -- git push demo-secure HEAD:refs/heads/demo/webinar-fix >"$OUT/o" 2>"$OUT/e"; rc=$?
+            if grep -q 'Permission denied (publickey)' "$OUT/e"; then
+              pass "git push reached GitHub over the mediated ssh path (publickey rejected, expected for a throwaway key)"
+            else
+              fail "git push did not reach the GitHub auth step (rc=$rc)" "T6-git-ssh-chain"; show "$OUT/e" 12
+            fi
+          else inconc "no egress, git->ssh->GitHub chain not tested"; fi
+
+          # ------------------------------------------------------------------
+          section "summary"
+          echo "LANDLOCK_ABI=${LL_ABI}"
+          echo "PASS=$PASS FAIL=$FAIL INCONCLUSIVE=$INCONC"
+          if [ "$LL_ABI" -lt 0 ] 2>/dev/null; then
+            echo "VERDICT: LANDLOCK_UNAVAILABLE (guest kernel has no usable Landlock; see section 0b)"
+          elif [ "$LL_ABI" -lt 3 ] 2>/dev/null; then
+            echo "VERDICT: LANDLOCK_TOO_OLD (ABI $LL_ABI; command policies need >= 3, network rules >= 4)"
+          elif [ "$FAIL" -eq 0 ] && [ "$INCONC" -eq 0 ]; then
+            echo "VERDICT: ALL_PASS"
+          elif [ "$FAIL" -eq 0 ]; then
+            echo "VERDICT: PASS_WITH_INCONCLUSIVE (fix egress/NAT and rerun the inconclusive checks)"
+          else
+            echo "VERDICT: FAILURES ${FAILED[*]}"
+          fi
+          [ "$FAIL" -eq 0 ]
+      resources:
+        requests:
+          cpu: "1"
+          memory: 1Gi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: scratch-tmpfs
+          mountPath: /scratch
+        - name: github-credentials
+          mountPath: /run/secrets/github
+  volumes:
+    - name: workspace
+      emptyDir: {}
+    # Compares Landlock on tmpfs against the virtio-fs emptyDir above.
+    - name: scratch-tmpfs
+      emptyDir:
+        medium: Memory
+        sizeLimit: 64Mi
+    # Stands in for the Secret volume in k8s/job.yaml.
+    - name: github-credentials
+      emptyDir:
+        medium: Memory
+        sizeLimit: 1Mi
