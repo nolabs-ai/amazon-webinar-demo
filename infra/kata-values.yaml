@@ -7,7 +7,42 @@ tolerations:
     value: "true"
     effect: NoSchedule
 
+# The stock clh guest kernel has no Landlock. The kata-clh runtime below reuses
+# the clh config with the custom kernel from kernel/.
 shims:
   disableAll: true
-  clh:
-    enabled: true
+
+customRuntimes:
+  enabled: true
+  runtimes:
+    kata-clh:
+      baseConfig: clh
+      # The node user data downloads the kernel to this path
+      # (terraform var kata_guest_kernel_s3_uri).
+      #
+      # kernel_params is not set: a drop-in value replaces the whole key, and
+      # CONFIG_LSM already lists landlock.
+      dropIn: |
+        [hypervisor.clh]
+        kernel = "/opt/kata-guest-kernel/vmlinux-landlock"
+      # Matches the chart's own kata-clh RuntimeClass.
+      runtimeClass: |
+        kind: RuntimeClass
+        apiVersion: node.k8s.io/v1
+        metadata:
+          name: kata-clh
+          labels:
+            app.kubernetes.io/managed-by: kata-deploy
+        handler: kata-clh
+        overhead:
+          podFixed:
+            memory: "130Mi"
+            cpu: "250m"
+        scheduling:
+          nodeSelector:
+            katacontainers.io/kata-runtime: "true"
+      # Required by the chart template; empty selects the defaults.
+      containerd:
+        snapshotter: ""
+      crio:
+        pullType: ""
