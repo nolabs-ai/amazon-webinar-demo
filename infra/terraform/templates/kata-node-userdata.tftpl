@@ -1,0 +1,19 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==KATA=="
+
+--==KATA==
+Content-Type: text/x-shellscript; charset="us-ascii"
+
+#!/bin/bash
+set -euxo pipefail
+
+# Nested virtualization must expose /dev/kvm.
+test -e /dev/kvm || echo "WARNING: /dev/kvm missing, nested virtualization is not enabled" >&2
+
+# Custom guest kernel with Landlock (kernel/README.md); the path matches
+# infra/kata-values.yaml.
+mkdir -p /opt/kata-guest-kernel
+aws s3 cp "${guest_kernel_s3_uri}" /opt/kata-guest-kernel/vmlinux-landlock --region "${region}"
+chmod 0644 /opt/kata-guest-kernel/vmlinux-landlock
+
+--==KATA==--

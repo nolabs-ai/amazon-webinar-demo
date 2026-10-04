@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars, which is gitignored.
+
+# Required
+aws_account_id           = "123456789012"
+kata_guest_kernel_s3_uri = "s3://<bucket>/kata/vmlinux-<ver>-landlock"
+
+# Optional, defaults shown
+# aws_profile  = null
+# region       = "eu-west-1"
+# cluster_name = "webinar-kata"
+# vpc_cidr     = "10.60.0.0/16"
+#
+# Use an existing network:
+# create_vpc         = false
+# vpc_id             = "vpc-..."
+# private_subnet_ids = ["subnet-...", "subnet-..."]
