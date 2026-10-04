@@ -1,0 +1,54 @@
+name: Kata guest kernel
+
+# Builds the Landlock-enabled Kata guest kernel (kernel/README.md). Pull
+# requests check the merged config; pushes to main and manual runs compile it.
+
+on:
+  pull_request:
+    paths:
+      - kernel/**
+      - .github/workflows/kernel.yml
+  push:
+    branches: [main]
+    paths:
+      - kernel/**
+      - .github/workflows/kernel.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  config:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Merge Kata fragments and check the config
+        run: kernel/build.sh --setup-only
+
+  build:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache kernel tarball
+        uses: actions/cache@v4
+        with:
+          path: kernel/.work/*.tar.xz*
+          key: kernel-tarball-${{ hashFiles('kernel/versions.env') }}
+
+      - name: Build and verify
+        run: kernel/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kata-kernel-landlock
+          path: |
+            kernel/out/vmlinux-*
+            kernel/out/config-*
+            kernel/out/SHA256SUMS
+            kernel/out/BUILD-INFO.txt
+          if-no-files-found: error
