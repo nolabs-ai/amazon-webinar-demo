@@ -1,0 +1,8 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.tfvars
+!terraform.tfvars.example
+# keep .terraform.lock.hcl committed
