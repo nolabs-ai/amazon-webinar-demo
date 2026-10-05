@@ -13,3 +13,8 @@ output "ecr_repository_url" {
 output "vpc_id" {
   value = local.vpc_id
 }
+
+output "github_image_push_role_arn" {
+  description = "Set as the AWS_ROLE_ARN repository variable. Null unless enable_github_oidc is true."
+  value       = one(aws_iam_role.github_image_push[*].arn)
+}

@@ -47,14 +47,59 @@ infra/install-kata.sh
 3.27.0) with `kata-values.yaml`, waits for the rollout, and confirms the
 `kata-clh` RuntimeClass exists.
 
-To push the demo image, use a unique tag because tags are immutable:
+To push the demo image, use `scripts/build-image.sh`. It builds for
+`linux/amd64` (so it works on arm64 laptops), logs in to ECR with the standard
+AWS credential chain, pushes under `<git-sha>-<timestamp>` (or `-t <tag>`;
+tags are immutable) and prints `<repo>@sha256:...` for `k8s/job.yaml` and
+`PREFLIGHT_IMAGE`. The repository defaults to the Terraform output; pass
+`-r <url>` or set `ECR_REPOSITORY_URL` otherwise. `--no-push` only builds.
 
 ```text
-ECR=$(terraform -chdir=infra/terraform output -raw ecr_repository_url)
-aws ecr get-login-password --region eu-west-1 \
-  | docker login --username AWS --password-stdin "${ECR%%/*}"
-docker buildx build --platform linux/amd64 -t "$ECR:<tag>" --push .
+export AWS_PROFILE=<your-profile>
+scripts/build-image.sh
 ```
+
+## Pushing from GitHub Actions
+
+`.github/workflows/image-push.yml` is a manual workflow (Actions > Push image >
+Run workflow) that pushes through GitHub OIDC. No keys are stored. Set these
+repository variables (Settings > Secrets and variables > Actions > Variables):
+
+| Variable | Value |
+|---|---|
+| `AWS_ROLE_ARN` | ARN of the role below |
+| `AWS_REGION` | `eu-west-1` |
+| `ECR_REPOSITORY` | repository name, `amazon-webinar-demo` |
+
+The role needs an OIDC provider for `token.actions.githubusercontent.com`
+(audience `sts.amazonaws.com`), this trust policy, and an ECR push policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Principal": {"Federated": "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com"},
+    "Condition": {
+      "StringEquals": {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": "repo:nolabs-ai/amazon-webinar-demo:ref:refs/heads/main"
+      }
+    }
+  }]
+}
+```
+
+Permissions: `ecr:GetAuthorizationToken` on `*`, and `ecr:BatchCheckLayerAvailability`,
+`ecr:BatchGetImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`,
+`ecr:CompleteLayerUpload`, `ecr:PutImage` on the repository ARN.
+
+`terraform/github_oidc.tf` creates all of this when `enable_github_oidc = true`
+(default off). Set `create_github_oidc_provider = false` if the account already
+has a GitHub provider, and adjust `github_repository` and `github_push_branch`.
+`terraform output github_image_push_role_arn` gives the `AWS_ROLE_ARN` value.
+The trust policy only admits runs on that branch, so dispatch the workflow from it.
 
 ## Guest kernel
 

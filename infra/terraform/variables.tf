@@ -131,3 +131,29 @@ variable "ecr_repository_name" {
   type    = string
   default = "amazon-webinar-demo"
 }
+
+# GitHub OIDC for image pushes (optional)
+
+variable "enable_github_oidc" {
+  description = "Create an IAM role that .github/workflows/image-push.yml assumes through GitHub OIDC to push to ECR."
+  type        = bool
+  default     = false
+}
+
+variable "create_github_oidc_provider" {
+  description = "Create the GitHub OIDC provider. Set false if the account already has one."
+  type        = bool
+  default     = true
+}
+
+variable "github_repository" {
+  description = "GitHub repository allowed to assume the push role, as owner/name."
+  type        = string
+  default     = "nolabs-ai/amazon-webinar-demo"
+}
+
+variable "github_push_branch" {
+  description = "Branch whose workflow runs may assume the push role."
+  type        = string
+  default     = "main"
+}
