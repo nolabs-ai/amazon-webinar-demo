@@ -50,12 +50,14 @@ RUN install -d -o node -g node /demo /workspace /home/node/.local/state/nono \
     && install -d -m 0755 /etc/nono
 
 COPY config/github_known_hosts /etc/nono/github_known_hosts
+COPY --chown=node:node bin /demo/bin
 COPY --chown=node:node demo_app /demo/demo_app
 COPY --chown=node:node profiles /demo/profiles
 COPY --chown=node:node prompts /demo/prompts
 COPY --chown=node:node scenario /demo/scenario
 
-RUN chmod 0444 /etc/nono/github_known_hosts
+RUN chmod 0444 /etc/nono/github_known_hosts \
+    && find /demo/bin -type f ! -name .gitkeep -exec chmod 0755 {} +
 
 ENV HOME=/home/node
 

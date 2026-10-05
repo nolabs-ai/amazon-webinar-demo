@@ -1,0 +1,48 @@
+name: Push image
+
+# Manual. Builds the agent image and pushes it to ECR using GitHub OIDC.
+# Repository variables (Settings > Secrets and variables > Actions > Variables):
+#   AWS_ROLE_ARN, AWS_REGION, ECR_REPOSITORY (the repository name)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag (tags are immutable). Empty uses the git SHA and run number.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  push:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        env:
+          REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=${TAG:-${GITHUB_SHA::12}-${GITHUB_RUN_NUMBER}}
+          docker buildx build --platform linux/amd64 --provenance=false --push \
+            -t "$REPOSITORY:$tag" --metadata-file "$RUNNER_TEMP/metadata.json" \
+            -f Containerfile .
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json")
+          echo "pushed $REPOSITORY@$digest"
+          echo "\`$REPOSITORY@$digest\`" >> "$GITHUB_STEP_SUMMARY"

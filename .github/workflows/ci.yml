@@ -35,3 +35,23 @@ jobs:
 
       - name: Test profiles
         run: scripts/test-profiles.sh
+
+  image:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (linux/amd64, no push)
+        run: docker buildx build --platform linux/amd64 --load -f Containerfile -t amazon-webinar-demo:ci .
+
+      - name: Check tools the profiles and preflight rely on
+        run: |
+          docker run --rm amazon-webinar-demo:ci bash -euc '
+            test -x /usr/bin/gh -a -x /usr/bin/git -a -x /usr/bin/ssh
+            for c in nono pi curl jq python3 ssh-agent ssh-add ssh-keygen; do command -v "$c"; done
+            gh pr checks --help >/dev/null
+          '
