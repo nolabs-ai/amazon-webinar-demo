@@ -49,12 +49,14 @@ if [ "$mode" = container ]; then
   done
   info "building builder image $BUILDER_IMAGE"
   docker build -q -t "$BUILDER_IMAGE" -f "$here/Containerfile.builder" "$here" >/dev/null
+  inner_args=(--native)
+  [ "$setup_only" = 1 ] && inner_args+=(--setup-only)
   exec docker run --rm \
     -v "$repo_root:$repo_root" -w "$repo_root" \
     --user "$(id -u):$(id -g)" -e HOME=/tmp \
     -e OUT="$OUT" -e WORK="$WORK" -e ALLOW_KERNEL_DRIFT="${ALLOW_KERNEL_DRIFT:-0}" \
     "$BUILDER_IMAGE" \
-    "$here/build.sh" --native ${setup_only:+--setup-only}
+    "$here/build.sh" "${inner_args[@]}"
 fi
 
 # Native mode
