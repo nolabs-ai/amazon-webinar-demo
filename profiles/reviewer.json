@@ -7,6 +7,9 @@
   "workdir": {
     "access": "read"
   },
+  "linux": {
+    "af_unix_mediation": "pathname"
+  },
   "network": {
     "block": true
   },
