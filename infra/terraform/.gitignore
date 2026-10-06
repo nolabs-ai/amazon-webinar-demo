@@ -6,3 +6,6 @@ crash.log
 *.tfvars
 !terraform.tfvars.example
 # keep .terraform.lock.hcl committed
+
+# Terraform plan files can contain sensitive values
+tfplan
