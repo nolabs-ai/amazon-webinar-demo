@@ -76,35 +76,14 @@ resource "aws_iam_role_policy_attachment" "node" {
   for_each = toset([
     "AmazonEKSWorkerNodePolicy",
     "AmazonEKS_CNI_Policy",
+    # Nodes must pull the EKS system images (vpc-cni, kube-proxy, coredns) from
+    # AWS's own registry as well as the demo image from this account's ECR. A
+    # policy scoped to the demo repository alone leaves the node NotReady.
+    "AmazonEC2ContainerRegistryReadOnly",
     "AmazonSSMManagedInstanceCore",
   ])
   role       = aws_iam_role.node.name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/${each.value}"
-}
-
-# Pull-only access to the demo repository.
-resource "aws_iam_role_policy" "node_ecr_pull" {
-  name = "ecr-pull"
-  role = aws_iam_role.node.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "ecr:GetAuthorizationToken"
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer",
-        ]
-        Resource = aws_ecr_repository.demo.arn
-      },
-    ]
-  })
 }
 
 # Read access to the custom guest kernel object.
@@ -152,6 +131,11 @@ resource "aws_eks_addon" "this" {
   for_each     = toset(["vpc-cni", "kube-proxy", "coredns"])
   cluster_name = aws_eks_cluster.this.name
   addon_name   = each.value
+
+  # The cluster bootstraps self-managed vpc-cni, kube-proxy and coredns; take
+  # them over instead of failing on the conflict.
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [aws_eks_node_group.system]
 }

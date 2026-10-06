@@ -14,7 +14,7 @@ on the Kata nodes. OpenTofu works as a drop-in for Terraform 1.8 or newer.
 | `kata` node group | `m8i.xlarge`, Amazon Linux 2023, 0 to 2 nodes, label `katacontainers.io/kata-runtime=true`, taint `kata=true:NoSchedule` |
 | `kata` launch template | Built from `nested-virtualization-launch-template.json`: nested virtualization, 100 GiB encrypted gp3, IMDSv2 required |
 | `system` node group | `t3.medium`, Amazon Linux 2023, for coredns, kube-proxy, and the CNI |
-| ECR | `amazon-webinar-demo`, immutable tags, scan on push, last 20 images kept; node role has pull-only access |
+| ECR | `amazon-webinar-demo`, immutable tags, scan on push, last 20 images kept; node role has read-only ECR access (`AmazonEC2ContainerRegistryReadOnly`, needed for the EKS system images too) |
 
 ## Prerequisites
 
