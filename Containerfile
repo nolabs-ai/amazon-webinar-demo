@@ -15,6 +15,7 @@ RUN apt-get update \
         jq \
         openssh-client \
         python3 \
+        ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 COPY NONO_VERSION PI_VERSION /tmp/versions/
