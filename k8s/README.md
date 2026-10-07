@@ -80,7 +80,7 @@ modes: their nono profiles grant no access under `/run/secrets`.
 - **Lifetime**: `activeDeadlineSeconds: 2700` bounds a hung run and
   `ttlSecondsAfterFinished: 3600` removes the Job, pod and logs an hour after it
   finishes; read or save the logs before then.
-- **Workspace**: an `emptyDir` at `/workspace`; the launcher clones into it.
+- **Workspace**: an `emptyDir` at `/workspace`; the launcher clones into `/workspace/repo`, a directory it owns (the mount point itself is root-owned, which git refuses as "dubious ownership").
 
 ## Troubleshooting
 

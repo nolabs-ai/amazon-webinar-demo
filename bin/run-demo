@@ -4,7 +4,7 @@
 #
 #   1. checks the inputs, the secrets and the GitHub issue, fails fast if any
 #      is missing;
-#   2. starts an ssh-agent, loads the deploy key into it and prepares /workspace;
+#   2. starts an ssh-agent, loads the deploy key into it and clones into /workspace/repo;
 #   3. stage 1: Pi under the developer profile fixes the issue and opens a PR;
 #   4. stage 2: Pi under the reviewer profile reads the PR and comments;
 #   5. after each stage prints nono's audit summary and every denied decision.
@@ -19,7 +19,10 @@ umask 077
 
 demo_dir=${DEMO_DIR:-/demo}
 secrets_dir=${SECRETS_DIR:-/run/secrets/github}
-workspace=${WORKSPACE:-/workspace}
+# The Job mounts an emptyDir at /workspace, which is owned by root, so git would
+# refuse a clone placed directly in it ("dubious ownership"). Clone into a
+# subdirectory that this launcher (uid 1000) creates and therefore owns.
+workspace=${WORKSPACE:-/workspace/repo}
 github_api=${GITHUB_API_URL:-https://api.github.com}
 github_git=${GITHUB_GIT_URL:-https://github.com}
 stage_timeout=${STAGE_TIMEOUT:-900}
@@ -292,7 +295,8 @@ start_ssh_agent() {
 
 prepare_workspace() {
   local helper=$run_dir/git-credential-token
-  [[ -d $workspace ]] || die "$workspace does not exist"
+  [[ -d $(dirname "$workspace") ]] || die "$(dirname "$workspace") does not exist"
+  mkdir -p "$workspace" || die "cannot create $workspace"
   [[ -z $(ls -A "$workspace") ]] || die "$workspace is not empty"
 
   # The token reaches git through a credential helper that reads the Secret, so
