@@ -3,8 +3,16 @@ kind: Job
 metadata:
   name: github-agents-demo
   namespace: github-agents-demo
+# The image and the issue number are placeholders filled in by scripts/deploy.sh
+# (envsubst), so this file is a template, not something to apply directly.
 spec:
   backoffLimit: 0
+  # A hung agent must not hold a Kata VM forever; run-demo has its own per-stage
+  # timeouts well inside this.
+  activeDeadlineSeconds: 2700
+  # Logs are the demo's record; keep the Job long enough to read them, then let
+  # Kubernetes clean up the pod and its emptyDirs.
+  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       labels:
@@ -30,7 +38,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: agents
-          image: amazon-webinar-demo:dev
+          # Always an immutable digest (scripts/build-image.sh prints it), never
+          # a tag: the Job must run exactly the image that was rehearsed.
+          image: ${IMAGE}
           imagePullPolicy: IfNotPresent
           command:
             - /demo/bin/run-demo
@@ -40,11 +50,26 @@ spec:
             - name: GITHUB_REPOSITORY
               value: nolabs-ai/amazon-webinar-demo
             - name: ISSUE_NUMBER
-              value: REPLACE_ME
+              value: "${ISSUE_NUMBER}"
             - name: GIT_REMOTE
               value: demo-secure
             - name: GIT_BRANCH
               value: demo/webinar-fix
+            # Model access. The key itself comes from the Secret (model-api-key)
+            # and is brokered by nono; these select where the calls go.
+            # MODEL_API is Pi's wire protocol: anthropic-messages (Claude and
+            # compatibles), openai-completions or openai-responses. The launcher
+            # sets the proxy's auth header and allowed paths from it.
+            # MODEL_UPSTREAM_URL is the provider's base URL (OpenAI-style ones end
+            # in /v1) and MODEL_PROVIDER the Pi provider name.
+            - name: MODEL_PROVIDER
+              value: anthropic
+            - name: MODEL_ID
+              value: claude-sonnet-5-5
+            - name: MODEL_API
+              value: anthropic-messages
+            - name: MODEL_UPSTREAM_URL
+              value: https://api.anthropic.com
           resources:
             requests:
               cpu: "1"
@@ -63,10 +88,20 @@ spec:
               readOnly: true
             - name: workspace
               mountPath: /workspace
+            # nono's audit trail (it writes under $HOME/.local/state/nono). An
+            # emptyDir keeps it off the image layer and out of the Secret.
+            - name: nono-state
+              mountPath: /home/node/.local/state/nono
       volumes:
         - name: github-credentials
           secret:
             secretName: github-agents
-            defaultMode: 0400
+            # The files are root-owned and the container runs as uid 1000 with
+            # fsGroup 1000, so the group needs read access: 0400 would make them
+            # unreadable to the launcher. The agents are kept out by nono, not by
+            # file mode (profiles grant them no access under /run/secrets).
+            defaultMode: 0440
         - name: workspace
+          emptyDir: {}
+        - name: nono-state
           emptyDir: {}
