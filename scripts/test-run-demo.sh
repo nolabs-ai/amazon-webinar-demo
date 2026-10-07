@@ -326,6 +326,16 @@ run_demo FAKE_MERGED=true
 expect_fail "a merged PR is a failure" 'MERGED'
 
 echo
+# A failed model call (stopReason "error") must show its reason in the transcript.
+rendered=$(
+  # shellcheck source=bin/run-demo
+  source "$repo_root/bin/run-demo"
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"400 {\"error\":{\"message\":\"bad request\"}}"}}' |
+    render_events
+)
+[[ $rendered == *'MODEL ERROR: 400'*'bad request'* ]] &&
+  pass "a model error is shown in the transcript" || fail "model error not rendered: $rendered"
+
 if ((failures)); then
   echo "$failures check(s) failed" >&2
   exit 1

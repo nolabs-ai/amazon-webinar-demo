@@ -138,9 +138,14 @@ render_events() {
       elif $e.type == "tool_execution_end" then
         ([$e.result.content[]? | select(.type == "text") | .text] | join(" ") | clip) as $out
         | "    \(if $e.isError then "-> ERROR" else "-> ok" end): \($out)"
+      elif $e.type == "message_end" and $e.message.role == "assistant"
+           and $e.message.stopReason == "error" then
+        "\n  MODEL ERROR: \($e.message.errorMessage // "(no message)" | gsub("\\s+"; " ") | .[0:1000])"
       elif $e.type == "message_end" and $e.message.role == "assistant" then
         ([$e.message.content[]? | select(.type == "text") | .text] | join("\n")) as $text
         | if $text == "" then empty else "\n  assistant: \($text)" end
+      elif $e.type == "auto_retry_start" then
+        "  [model call failed, retrying (\($e.attempt)/\($e.maxAttempts)): \($e.errorMessage // "")]"
       else empty end'
 }
 
@@ -159,6 +164,9 @@ print_denials() {
        | "  DENIED command  \(.command // "-") (from \(.caller // "-")): \(.reason // "no reason recorded")"),
     ((.network_events // [])[]
        | select(((.decision // "") | tostring) | test("^(deny|approve_denied)"))
+       # glibc probes the name-service cache daemon, which is not in the image,
+       # and falls back; that refusal is noise, not a policy decision.
+       | select((.target // "") != "unix:/var/run/nscd/socket")
        | "  DENIED network  \([.method, ((.target // "") + (if .port then ":\(.port)" else "" end) + (.path // "")), .reason]
                               | map(select(. != null and . != "")) | join(" "))")')
   if [[ -n $denials ]]; then
