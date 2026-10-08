@@ -19,10 +19,11 @@ agent under nono.
 ## Run it
 
 ```text
+export GITHUB_REPOSITORY=<owner>/<disposable-repo>   # used by create-issue.sh and deploy.sh
 scripts/build-image.sh                  # note the repo@sha256:... line
 scripts/setup-secrets.sh                # prompts; creates the Secret in the cluster
 ISSUE=$(scripts/create-issue.sh)        # once per rehearsal
-scripts/deploy.sh --issue "$ISSUE" --image <repo@sha256:...>
+scripts/deploy.sh --issue "$ISSUE" --image <repo@sha256:...>   # or: --repo <owner/name>
 scripts/teardown.sh                     # when done (--purge also removes the Secret)
 ```
 
@@ -41,7 +42,7 @@ branch on GitHub; `run-demo` stops early if the branch still exists.
 | `namespace.yaml` | Namespace with the `restricted` Pod Security level |
 | `service-account.yaml` | Service account without a token (no Kubernetes API access) |
 | `secret.example.yaml` | Shape of the Secret, for reference only; use `scripts/setup-secrets.sh` instead |
-| `job.yaml` | Job template; `deploy.sh` fills in the image digest and issue number |
+| `job.yaml` | Job template; `deploy.sh` fills in the image digest, issue number and repository |
 
 ## The Secret
 

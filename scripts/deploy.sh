@@ -2,10 +2,14 @@
 # Apply the namespace, service account and Job to the current cluster and stream
 # the demo's logs.
 #
-#   scripts/deploy.sh --issue <number> --image <repo>@sha256:<digest> [--yes] [--no-logs]
+#   scripts/deploy.sh --repo <owner/name> --issue <number> \
+#       --image <repo>@sha256:<digest> [--yes] [--no-logs]
 #
-# --image is the immutable reference printed by scripts/build-image.sh (also
-# IMAGE in the environment); --issue is the issue to fix (also ISSUE_NUMBER;
+# --repo is the disposable GitHub repository the agents work in (also
+# GITHUB_REPOSITORY); there is deliberately no default, so a run can never
+# silently open pull requests in the wrong repository. --image is the immutable
+# reference printed by scripts/build-image.sh (also IMAGE in the environment);
+# --issue is the issue to fix in that repository (also ISSUE_NUMBER;
 # scripts/create-issue.sh prints one). The Secret must already exist
 # (scripts/setup-secrets.sh). An earlier Job of the same name is replaced.
 # Exits 0 only if the Job succeeded.
@@ -18,11 +22,13 @@ assume_yes=0
 follow=1
 IMAGE=${IMAGE:-}
 ISSUE_NUMBER=${ISSUE_NUMBER:-}
+GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
 
-usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while (($#)); do
   case $1 in
+    --repo) GITHUB_REPOSITORY=${2:?missing value for $1}; shift ;;
     --issue) ISSUE_NUMBER=${2:?missing value for $1}; shift ;;
     --image) IMAGE=${2:?missing value for $1}; shift ;;
     -y | --yes) assume_yes=1 ;;
@@ -33,13 +39,15 @@ while (($#)); do
   shift
 done
 
+[[ $GITHUB_REPOSITORY =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
+  die "--repo <owner/name> is required: the disposable repository the agents work in"
 [[ $ISSUE_NUMBER =~ ^[1-9][0-9]*$ ]] || die "--issue must be a positive integer"
 [[ $IMAGE =~ @sha256:[0-9a-f]{64}$ ]] ||
   die "--image must be pinned by digest (repo@sha256:...), as printed by scripts/build-image.sh"
 command -v envsubst >/dev/null || die "envsubst not found (gettext)"
 
 require_cluster
-export IMAGE ISSUE_NUMBER
+export IMAGE ISSUE_NUMBER GITHUB_REPOSITORY
 
 kubectl get secret "$secret_name" -n "$namespace" >/dev/null 2>&1 ||
   die "Secret $namespace/$secret_name not found; run scripts/setup-secrets.sh first"
@@ -50,8 +58,8 @@ kubectl apply -f "$repo_root/k8s/namespace.yaml" -f "$repo_root/k8s/service-acco
 # Jobs are immutable: a rerun replaces the old one (and with it its logs).
 kubectl delete job "$job_name" -n "$namespace" --ignore-not-found --wait=true
 # shellcheck disable=SC2016  # envsubst takes the variable names literally
-envsubst '${IMAGE} ${ISSUE_NUMBER}' <"$repo_root/k8s/job.yaml" | kubectl apply -f -
-echo "Job $namespace/$job_name started: issue #$ISSUE_NUMBER, image $IMAGE"
+envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY}' <"$repo_root/k8s/job.yaml" | kubectl apply -f -
+echo "Job $namespace/$job_name started: $GITHUB_REPOSITORY issue #$ISSUE_NUMBER, image $IMAGE"
 
 ((follow)) || exit 0
 

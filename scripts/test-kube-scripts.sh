@@ -81,7 +81,7 @@ image=registry.example.invalid/demo@$digest
 
 # ---- deploy.sh -------------------------------------------------------------------
 reset
-"$repo_root/scripts/deploy.sh" --issue 7 --image "$image" --yes >"$work/out" 2>&1 &&
+"$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$image" --yes >"$work/out" 2>&1 &&
   pass "deploy succeeds when the Job succeeds" || {
   fail "deploy"
   cat "$work/out" >&2
@@ -95,27 +95,34 @@ grep -q 'delete job github-agents-demo' "$work/state/argv" &&
 grep -q 'fake log line' "$work/out" && pass "logs are streamed" || fail "no logs"
 
 reset
-if "$repo_root/scripts/deploy.sh" --issue 7 --image registry.example.invalid/demo:latest --yes >/dev/null 2>"$work/err"; then
+if "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image registry.example.invalid/demo:latest --yes >/dev/null 2>"$work/err"; then
   fail "deploy accepted a tag"
 else
   grep -q 'pinned by digest' "$work/err" && pass "deploy refuses an image tag" || fail "tag message"
 fi
 reset
-if "$repo_root/scripts/deploy.sh" --issue x --image "$image" --yes >/dev/null 2>&1; then
+# CI sets GITHUB_REPOSITORY itself, so make sure it is unset for this check.
+if env -u GITHUB_REPOSITORY "$repo_root/scripts/deploy.sh" --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
+  fail "deploy ran without a repository"
+else
+  grep -q -- '--repo' "$work/err" && pass "deploy requires --repo" || fail "repo message"
+fi
+
+if "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue x --image "$image" --yes >/dev/null 2>&1; then
   fail "deploy accepted a bad issue"
 else pass "deploy refuses a non-numeric issue"; fi
 reset
-if FAKE_NO_SECRET=1 "$repo_root/scripts/deploy.sh" --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
+if FAKE_NO_SECRET=1 "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
   fail "deploy ran without the Secret"
 else
   grep -q 'setup-secrets' "$work/err" && pass "deploy needs the Secret" || fail "secret message"
 fi
 reset
-if FAKE_JOB_FAILED=1 "$repo_root/scripts/deploy.sh" --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
+if FAKE_JOB_FAILED=1 "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
   fail "deploy reported success for a failed Job"
 else pass "deploy exits non-zero when the Job fails"; fi
 reset
-if FAKE_NO_CLUSTER=1 "$repo_root/scripts/deploy.sh" --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
+if FAKE_NO_CLUSTER=1 "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$image" --yes >/dev/null 2>"$work/err"; then
   fail "deploy ran without a cluster"
 else
   grep -q 'cannot reach the cluster' "$work/err" && pass "deploy refuses an unreachable cluster" || fail "cluster message"

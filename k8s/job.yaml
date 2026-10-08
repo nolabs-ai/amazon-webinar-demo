@@ -3,8 +3,9 @@ kind: Job
 metadata:
   name: github-agents-demo
   namespace: github-agents-demo
-# The image and the issue number are placeholders filled in by scripts/deploy.sh
-# (envsubst), so this file is a template, not something to apply directly.
+# The image, the issue number and the repository are placeholders filled in by
+# scripts/deploy.sh (envsubst), so this file is a template, not something to
+# apply directly.
 spec:
   backoffLimit: 0
   # A hung agent must not hold a Kata VM forever; run-demo has its own per-stage
@@ -48,7 +49,7 @@ spec:
             - name: AGENT_COMMAND
               value: pi
             - name: GITHUB_REPOSITORY
-              value: nolabs-ai/amazon-webinar-demo
+              value: "${GITHUB_REPOSITORY}"
             - name: ISSUE_NUMBER
               value: "${ISSUE_NUMBER}"
             - name: GIT_REMOTE
