@@ -33,8 +33,48 @@ jobs:
       - name: Test sample application
         run: python3 -m unittest discover -s demo_app -p 'test_*.py'
 
+      - name: Lint shell scripts
+        run: shellcheck bin/run-demo bin/pi-agent scripts/*.sh
+
+      - name: Test launcher (fake nono, Pi and GitHub)
+        run: scripts/test-run-demo.sh
+
+      - name: Test cluster scripts (fake kubectl)
+        run: scripts/test-kube-scripts.sh
+
       - name: Test profiles
         run: scripts/test-profiles.sh
+
+  manifests:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned kubeconform
+        run: |
+          set -euo pipefail
+          version=v0.7.0
+          sha256=c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+          work=$(mktemp -d)
+          trap 'rm -r "$work"' EXIT
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/$version/kubeconform-linux-amd64.tar.gz" \
+            -o "$work/kubeconform.tar.gz"
+          echo "$sha256  $work/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf "$work/kubeconform.tar.gz" -C "$work" kubeconform
+          sudo install -m 0755 "$work/kubeconform" /usr/local/bin/kubeconform
+
+      # job.yaml is a template (image and issue number are placeholders), so
+      # render it the way scripts/deploy.sh does before validating the schema.
+      # The version is the cluster's (infra/terraform/variables.tf).
+      - name: Validate manifests
+        run: |
+          set -euo pipefail
+          export IMAGE="registry.example.invalid/demo@sha256:$(printf 'a%.0s' {1..64})" ISSUE_NUMBER=1 GITHUB_REPOSITORY=acme/widgets
+          envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY}' < k8s/job.yaml > "$RUNNER_TEMP/job.yaml"
+          grep -Eq 'image: .+@sha256:[0-9a-f]{64}$' "$RUNNER_TEMP/job.yaml"
+          kubeconform -strict -summary -kubernetes-version 1.35.0 \
+            k8s/namespace.yaml k8s/service-account.yaml k8s/secret.example.yaml "$RUNNER_TEMP/job.yaml"
 
   image:
     runs-on: ubuntu-24.04
@@ -52,6 +92,6 @@ jobs:
         run: |
           docker run --rm amazon-webinar-demo:ci bash -euc '
             test -x /usr/bin/gh -a -x /usr/bin/git -a -x /usr/bin/ssh
-            for c in nono pi curl jq python3 ssh-agent ssh-add ssh-keygen; do command -v "$c"; done
+            for c in nono pi curl jq python3 ssh-agent ssh-add ssh-keygen rg timeout comm; do command -v "$c"; done
             gh pr checks --help >/dev/null
           '

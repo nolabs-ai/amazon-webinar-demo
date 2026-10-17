@@ -10,14 +10,59 @@
   "linux": {
     "af_unix_mediation": "pathname"
   },
+  "filesystem": {
+    "allow": [
+      "$HOME/.pi/developer"
+    ],
+    "read_file": [
+      "/demo/bin/pi-agent"
+    ]
+  },
+  "network": {
+    "allow_domain": [
+      "nono-deny-all.invalid"
+    ],
+    "credentials": [
+      "llm"
+    ],
+    "custom_credentials": {
+      "llm": {
+        "upstream": "https://api.anthropic.com",
+        "credential_key": "file:///run/secrets/github/model-api-key",
+        "env_var": "LLM_API_KEY",
+        "inject_header": "x-api-key",
+        "credential_format": "{}",
+        "endpoint_rules": [
+          {
+            "method": "POST",
+            "path": "/v1/messages"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/messages/count_tokens"
+          }
+        ]
+      }
+    }
+  },
   "environment": {
     "allow_vars": [
       "PATH",
       "HOME",
       "LANG",
       "LC_*",
-      "TERM"
-    ]
+      "TERM",
+      "AGENT_COMMAND",
+      "MODEL_PROVIDER",
+      "MODEL_ID",
+      "MODEL_API"
+    ],
+    "set_vars": {
+      "PI_CODING_AGENT_DIR": "$HOME/.pi/developer",
+      "PI_OFFLINE": "1",
+      "PI_SKIP_VERSION_CHECK": "1",
+      "PI_TELEMETRY": "0"
+    }
   },
   "command_policies": {
     "credentials": {
@@ -237,6 +282,11 @@
                         "method": "DELETE",
                         "path": "/**",
                         "reason": "the developer may not delete GitHub resources"
+                      },
+                      {
+                        "method": "*",
+                        "path": "/graphql",
+                        "reason": "the developer may not use GraphQL: nono cannot restrict its operations, so a mutation could merge"
                       }
                     ],
                     "allow": [
@@ -255,10 +305,6 @@
                       {
                         "method": "POST",
                         "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls"
-                      },
-                      {
-                        "method": "POST",
-                        "path": "/graphql"
                       }
                     ]
                   }
@@ -278,8 +324,7 @@
                   "http_proxy",
                   "https_proxy",
                   "no_proxy",
-                  "NONO_PROXY_TOKEN",
-                  "SSL_CERT_FILE"
+                  "NONO_PROXY_TOKEN"
                 ],
                 "set_vars": {
                   "GH_CONFIG_DIR": "/tmp/nono-gh-config",
@@ -313,42 +358,10 @@
                 {
                   "argv": {
                     "prefix": [
-                      "issue",
-                      "view"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "create"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "view"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "checks"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
                       "api"
                     ]
                   },
-                  "reason": "direct API calls remain constrained by endpoint policy"
+                  "reason": "REST only: endpoint policy constrains method and path, and GraphQL is unavailable"
                 }
               ]
             }

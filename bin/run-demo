@@ -1,0 +1,378 @@
+#!/usr/bin/env bash
+# Trusted launcher for the webinar Job. It is not sandboxed itself; it holds the
+# credentials and decides what the two sandboxed Pi agents get.
+#
+#   1. checks the inputs, the secrets and the GitHub issue, fails fast if any
+#      is missing;
+#   2. starts an ssh-agent, loads the deploy key into it and clones into /workspace/repo;
+#   3. stage 1: Pi under the developer profile fixes the issue and opens a PR;
+#   4. stage 2: Pi under the reviewer profile reads the PR and comments;
+#   5. after each stage prints nono's audit summary and every denied decision.
+#
+# Required environment: GITHUB_REPOSITORY ISSUE_NUMBER GIT_REMOTE GIT_BRANCH
+# AGENT_COMMAND MODEL_PROVIDER MODEL_ID MODEL_UPSTREAM_URL (MODEL_API optional).
+# Required files (the Secret volume): token, ssh-private-key, model-api-key.
+# Overrides for testing: DEMO_DIR SECRETS_DIR WORKSPACE GITHUB_API_URL
+# GITHUB_GIT_URL STAGE_TIMEOUT.
+set -euo pipefail
+umask 077
+
+demo_dir=${DEMO_DIR:-/demo}
+secrets_dir=${SECRETS_DIR:-/run/secrets/github}
+# The Job mounts an emptyDir at /workspace, which is owned by root, so git would
+# refuse a clone placed directly in it ("dubious ownership"). Clone into a
+# subdirectory that this launcher (uid 1000) creates and therefore owns.
+workspace=${WORKSPACE:-/workspace/repo}
+github_api=${GITHUB_API_URL:-https://api.github.com}
+github_git=${GITHUB_GIT_URL:-https://github.com}
+stage_timeout=${STAGE_TIMEOUT:-900}
+
+# The repository the profiles and prompts are written for; rendered per run.
+template_repo=nolabs-ai/amazon-webinar-demo
+# The profiles allow exactly this remote and branch.
+fixed_remote=demo-secure
+fixed_branch=demo/webinar-fix
+
+run_dir=
+github_status=
+pr_number=
+
+say() { printf '%s\n' "$*"; }
+die() {
+  printf '\nDEMO FAILED: %s\n' "$*" >&2
+  exit 1
+}
+banner() {
+  printf '\n%s\n  %s\n%s\n' \
+    '==============================================================' \
+    "$*" \
+    '=============================================================='
+}
+
+cleanup() {
+  local status=$?
+  if [[ -n ${SSH_AGENT_PID:-} ]]; then
+    kill "$SSH_AGENT_PID" 2>/dev/null || true
+  fi
+  if [[ -n $run_dir && -d $run_dir ]]; then
+    rm -rf -- "$run_dir"
+  fi
+  return "$status"
+}
+
+require_env() {
+  local name missing=()
+  for name in "$@"; do
+    [[ -n ${!name:-} ]] || missing+=("$name")
+  done
+  ((${#missing[@]} == 0)) || die "missing environment variable(s): ${missing[*]}"
+}
+
+require_file() {
+  [[ -f $1 && -r $1 && -s $1 ]] ||
+    die "$1 is missing, empty or unreadable (is the Secret mounted with defaultMode 0440 and fsGroup 1000?)"
+}
+
+# Substitute the template repository and the {{PLACEHOLDER}}s in a prompt.
+render_prompt() {
+  local file=$1 text
+  shift
+  text=$(<"$file")
+  text=${text//"$template_repo"/$GITHUB_REPOSITORY}
+  while (($#)); do
+    text=${text//"{{$1}}"/$2}
+    shift 2
+  done
+  printf '%s\n' "$text"
+}
+
+# Copy a profile with the repository and the model route filled in. The profiles
+# in the image are written for $template_repo and Anthropic's API; the route's
+# upstream, auth header and allowed paths follow MODEL_UPSTREAM_URL and MODEL_API
+# (the paths are what the client sends below its base URL, so an OpenAI-style
+# MODEL_UPSTREAM_URL ends in /v1). Everything else is untouched.
+render_profile() {
+  local header format paths
+  case $MODEL_API in
+    anthropic-messages)
+      header=x-api-key format='{}' paths='["/v1/messages", "/v1/messages/count_tokens"]' ;;
+    openai-completions)
+      header=Authorization format='Bearer {}' paths='["/chat/completions"]' ;;
+    openai-responses)
+      header=Authorization format='Bearer {}' paths='["/responses"]' ;;
+    *) die "unsupported MODEL_API '$MODEL_API' (anthropic-messages, openai-completions or openai-responses)" ;;
+  esac
+  jq --arg from "$template_repo" --arg repo "$GITHUB_REPOSITORY" \
+    --arg upstream "$MODEL_UPSTREAM_URL" --arg header "$header" --arg format "$format" \
+    --argjson paths "$paths" '
+      walk(if type == "string" then split($from) | join($repo) else . end)
+      | .network.custom_credentials.llm |= (
+          .upstream = $upstream | .inject_header = $header | .credential_format = $format
+          | .endpoint_rules = ($paths | map({method: "POST", path: .})))
+    ' "$1" >"$2"
+}
+
+# GitHub REST call made by the launcher with the token. The token goes to curl
+# through a pipe, never through argv or the environment, and the response body
+# is left in $run_dir/body.json with the status in $github_status.
+github() {
+  local method=$1 path=$2
+  shift 2
+  github_status=$(printf 'header = "Authorization: Bearer %s"\n' "$(<"$secrets_dir/token")" |
+    curl -sS -K - --max-time 30 -X "$method" "$@" \
+      -H 'Accept: application/vnd.github+json' \
+      -H 'X-GitHub-Api-Version: 2022-11-28' \
+      -o "$run_dir/body.json" -w '%{http_code}' "$github_api/$path") ||
+    die "cannot reach $github_api"
+}
+
+# Print a Pi --mode json stream as a readable transcript; other lines (nono's
+# or Pi's own stderr) pass through prefixed.
+render_events() {
+  jq -R -r --unbuffered '
+    def clip: gsub("\\s+"; " ") | if length > 300 then .[0:300] + "..." else . end;
+    ((fromjson? | select(type == "object")) // {type: "raw", line: .}) as $e
+    | if $e.type == "raw" then "  | \($e.line)"
+      elif $e.type == "tool_execution_start" then
+        "  > \($e.toolName): \(($e.args.command // $e.args.path // ($e.args | tostring)) | tostring | clip)"
+      elif $e.type == "tool_execution_end" then
+        ([$e.result.content[]? | select(.type == "text") | .text] | join(" ") | clip) as $out
+        | "    \(if $e.isError then "-> ERROR" else "-> ok" end): \($out)"
+      elif $e.type == "message_end" and $e.message.role == "assistant"
+           and $e.message.stopReason == "error" then
+        "\n  MODEL ERROR: \($e.message.errorMessage // "(no message)" | gsub("\\s+"; " ") | .[0:1000])"
+      elif $e.type == "message_end" and $e.message.role == "assistant" then
+        ([$e.message.content[]? | select(.type == "text") | .text] | join("\n")) as $text
+        | if $text == "" then empty else "\n  assistant: \($text)" end
+      elif $e.type == "auto_retry_start" then
+        "  [model call failed, retrying (\($e.attempt)/\($e.maxAttempts)): \($e.errorMessage // "")]"
+      else empty end'
+}
+
+# nono session ids, one per line, sorted.
+audit_sessions() {
+  { nono audit list --json 2>/dev/null || true; } | jq -r '.[]?.session_id' | sort
+}
+
+# The denied decisions of one audited session: refused commands and refused
+# network requests. Filesystem and credential refusals are in `audit show`.
+print_denials() {
+  local denials
+  denials=$(nono audit show "$1" --json | jq -r '
+    ((.command_policy_events // [])[]
+       | select((.decision // "") | test("denied$"))
+       | "  DENIED command  \(.command // "-") (from \(.caller // "-")): \(.reason // "no reason recorded")"),
+    ((.network_events // [])[]
+       | select(((.decision // "") | tostring) | test("^(deny|approve_denied)"))
+       # glibc probes the name-service cache daemon, which is not in the image,
+       # and falls back; that refusal is noise, not a policy decision.
+       | select((.target // "") != "unix:/var/run/nscd/socket")
+       | "  DENIED network  \([.method, ((.target // "") + (if .port then ":\(.port)" else "" end) + (.path // "")), .reason]
+                              | map(select(. != null and . != "")) | join(" "))")')
+  if [[ -n $denials ]]; then
+    say "$denials"
+  else
+    say "  (none)"
+  fi
+}
+
+# One agent under one profile. Sets $stage_status to Pi's exit status.
+stage_status=0
+run_stage() {
+  local role=$1 prompt=$2 before id
+  local prefix=()
+  # Only the developer gets the deploy key's agent socket.
+  [[ $role == developer ]] || prefix=(env -u SSH_AUTH_SOCK -u SSH_AGENT_PID)
+
+  banner "STAGE: $role agent (nono profile: $role)"
+  before=$(audit_sessions)
+
+  set +e
+  (
+    cd "$workspace"
+    timeout -k 15 "$stage_timeout" "${prefix[@]}" \
+      nono run -s --allow-cwd --profile "$run_dir/profiles/$role.json" -- \
+      "$demo_dir/bin/pi-agent" "$prompt" </dev/null 2>&1
+  ) | tee "$run_dir/$role.log" | render_events
+  stage_status=${PIPESTATUS[0]}
+  set -e
+
+  case $stage_status in
+    0) say "  [$role agent exited normally]" ;;
+    124 | 137) say "  [$role agent hit the ${stage_timeout}s stage timeout]" ;;
+    *) say "  [$role agent exited with status $stage_status]" ;;
+  esac
+
+  id=$(comm -13 <(printf '%s\n' "$before") <(audit_sessions) | tail -n 1)
+  [[ -n $id ]] || die "nono recorded no audit session for the $role stage"
+
+  banner "NONO AUDIT: $role (session $id)"
+  nono audit show "$id" 2>&1
+  say
+  say "Denied by nono during the $role stage:"
+  print_denials "$id"
+}
+
+find_pull_request() {
+  local owner=${GITHUB_REPOSITORY%%/*}
+  github GET "repos/$GITHUB_REPOSITORY/pulls?head=$owner:$GIT_BRANCH&state=all"
+  [[ $github_status == 200 ]] || die "listing pull requests failed (HTTP $github_status)"
+  pr_number=$(jq -r '.[0].number // empty' "$run_dir/body.json")
+}
+
+# A denied merge must stay denied: whatever the agents did, the PR is open.
+assert_not_merged() {
+  github GET "repos/$GITHUB_REPOSITORY/pulls/$pr_number"
+  [[ $github_status == 200 ]] || die "cannot read pull request #$pr_number (HTTP $github_status)"
+  [[ $(jq -r '.merged' "$run_dir/body.json") == false ]] ||
+    die "pull request #$pr_number was MERGED: the merge boundary failed"
+}
+
+count_comments() {
+  github GET "repos/$GITHUB_REPOSITORY/issues/$pr_number/comments?per_page=100"
+  [[ $github_status == 200 ]] || die "cannot read comments on #$pr_number (HTTP $github_status)"
+  jq 'length' "$run_dir/body.json"
+}
+
+prepare_inputs() {
+  local name file
+  require_env GITHUB_REPOSITORY ISSUE_NUMBER GIT_REMOTE GIT_BRANCH AGENT_COMMAND \
+    MODEL_PROVIDER MODEL_ID MODEL_UPSTREAM_URL HOME
+  export MODEL_API=${MODEL_API:-anthropic-messages}
+
+  [[ $GITHUB_REPOSITORY =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
+    die "GITHUB_REPOSITORY must look like owner/name, got '$GITHUB_REPOSITORY'"
+  [[ $ISSUE_NUMBER =~ ^[1-9][0-9]*$ ]] ||
+    die "ISSUE_NUMBER must be a positive integer, got '$ISSUE_NUMBER' (deploy.sh sets it)"
+  [[ $GIT_REMOTE == "$fixed_remote" ]] ||
+    die "GIT_REMOTE must be $fixed_remote: the developer profile allows only that remote"
+  [[ $GIT_BRANCH == "$fixed_branch" ]] ||
+    die "GIT_BRANCH must be $fixed_branch: the developer profile allows only that branch"
+  [[ $MODEL_UPSTREAM_URL == https://* ]] ||
+    die "MODEL_UPSTREAM_URL must be an https:// URL, got '$MODEL_UPSTREAM_URL'"
+  [[ $MODEL_UPSTREAM_URL != *\"* && $MODEL_ID != *\"* ]] || die "MODEL_* must not contain quotes"
+
+  for name in nono git ssh-agent ssh-add jq curl timeout "$AGENT_COMMAND"; do
+    command -v "$name" >/dev/null || die "required command not found: $name"
+  done
+  for file in token ssh-private-key model-api-key; do
+    require_file "$secrets_dir/$file"
+  done
+  [[ -x $demo_dir/bin/pi-agent ]] || die "$demo_dir/bin/pi-agent is missing or not executable"
+
+  audit_dir=${XDG_STATE_HOME:-$HOME/.local/state}/nono
+  mkdir -p "$audit_dir" 2>/dev/null || true
+  [[ -w $audit_dir ]] ||
+    die "nono audit directory $audit_dir is not writable (the Job mounts an emptyDir there)"
+
+  run_dir=$(mktemp -d "$HOME/.demo-run.XXXXXX")
+  mkdir -p "$HOME/.pi/developer" "$HOME/.pi/reviewer" "$run_dir/profiles"
+}
+
+check_issue() {
+  github GET "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER"
+  case $github_status in
+    200) ;;
+    404) die "issue #$ISSUE_NUMBER not found in $GITHUB_REPOSITORY (create it with scripts/create-issue.sh)" ;;
+    401 | 403) die "GitHub rejected the token reading issue #$ISSUE_NUMBER (HTTP $github_status)" ;;
+    *) die "cannot read issue #$ISSUE_NUMBER (HTTP $github_status)" ;;
+  esac
+  jq -e 'has("pull_request") | not' "$run_dir/body.json" >/dev/null ||
+    die "#$ISSUE_NUMBER is a pull request, not an issue"
+  say "Issue #$ISSUE_NUMBER: $(jq -r '.title' "$run_dir/body.json")"
+
+  # A leftover branch from a previous rehearsal would make the push fail.
+  github GET "repos/$GITHUB_REPOSITORY/branches/$GIT_BRANCH"
+  [[ $github_status == 404 ]] ||
+    die "branch $GIT_BRANCH already exists in $GITHUB_REPOSITORY (HTTP $github_status); close its PR and delete the branch before rerunning"
+}
+
+start_ssh_agent() {
+  # Never reuse an agent from the environment: this one holds only the deploy key.
+  unset SSH_AUTH_SOCK SSH_AGENT_PID
+  eval "$(ssh-agent -s)" >/dev/null
+  [[ -S ${SSH_AUTH_SOCK:-} ]] || die "ssh-agent did not start"
+  # Read through a pipe: ssh-add refuses a key file that is group-readable, and
+  # the Secret volume is mode 0440 for fsGroup 1000. Only a regular file is
+  # permission-checked, so stdin sidesteps it without copying the key to disk.
+  # shellcheck disable=SC2002
+  cat "$secrets_dir/ssh-private-key" | ssh-add - >/dev/null 2>&1 ||
+    die "ssh-add could not load $secrets_dir/ssh-private-key (a key with a passphrase is not supported)"
+  say "ssh-agent: $(ssh-add -l | awk '{print $2, $4}' | head -n 1) loaded; the agents only get a mediated socket"
+}
+
+prepare_workspace() {
+  local helper=$run_dir/git-credential-token
+  [[ -d $(dirname "$workspace") ]] || die "$(dirname "$workspace") does not exist"
+  mkdir -p "$workspace" || die "cannot create $workspace"
+  [[ -z $(ls -A "$workspace") ]] || die "$workspace is not empty"
+
+  # The token reaches git through a credential helper that reads the Secret, so
+  # it is never in argv, in the environment of the clone, or in .git/config.
+  cat >"$helper" <<EOF
+#!/bin/sh
+[ "\$1" = get ] || exit 0
+printf 'username=x-access-token\npassword=%s\n' "\$(cat "$secrets_dir/token")"
+EOF
+  chmod 0700 "$helper"
+  GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c "credential.helper=$helper" \
+    clone --quiet "$github_git/$GITHUB_REPOSITORY.git" "$workspace" ||
+    die "cloning $GITHUB_REPOSITORY failed"
+
+  git -C "$workspace" remote add "$GIT_REMOTE" \
+    "ssh://git@ssh.github.com:443/$GITHUB_REPOSITORY.git"
+  git -C "$workspace" config user.name "Webinar Developer Agent"
+  git -C "$workspace" config user.email "developer-agent@users.noreply.github.com"
+  git -C "$workspace" config commit.gpgsign false
+  say "Workspace: $(git -C "$workspace" rev-parse --short HEAD) on $(git -C "$workspace" symbolic-ref --short HEAD), remote $GIT_REMOTE added"
+}
+
+main() {
+  trap cleanup EXIT
+  export NO_COLOR=1
+  banner "WEBINAR DEMO: ${GITHUB_REPOSITORY:-?} issue #${ISSUE_NUMBER:-?}"
+  prepare_inputs
+  say "nono $(nono --version | awk '{print $2}'), model ${MODEL_PROVIDER}/${MODEL_ID} via ${MODEL_UPSTREAM_URL} (key brokered by nono)"
+  say "Audit directory: $audit_dir"
+
+  local role problems
+  for role in developer reviewer; do
+    render_profile "$demo_dir/profiles/$role.json" "$run_dir/profiles/$role.json"
+    problems=$(nono profile validate "$run_dir/profiles/$role.json" 2>&1) ||
+      die "rendered $role profile does not validate: $problems"
+  done
+
+  check_issue
+  start_ssh_agent
+  prepare_workspace
+
+  # --- stage 1: developer ----------------------------------------------------
+  run_stage developer "$(render_prompt "$demo_dir/prompts/developer.md" \
+    ISSUE_NUMBER "$ISSUE_NUMBER")"
+  find_pull_request
+  if [[ -z $pr_number ]]; then
+    die "the developer stage opened no pull request for $GIT_BRANCH (stage status $stage_status)"
+  fi
+  assert_not_merged
+  say
+  say "Developer result: pull request #$pr_number ($(jq -r '.html_url' "$run_dir/body.json"))"
+
+  # --- stage 2: reviewer -----------------------------------------------------
+  local comments_before comments_after
+  comments_before=$(count_comments)
+  run_stage reviewer "$(render_prompt "$demo_dir/prompts/reviewer.md" \
+    PR_NUMBER "$pr_number" ISSUE_NUMBER "$ISSUE_NUMBER")"
+  comments_after=$(count_comments)
+  ((comments_after > comments_before)) ||
+    die "the reviewer left no comment on pull request #$pr_number (stage status $stage_status)"
+  assert_not_merged
+
+  banner "DEMO COMPLETE"
+  say "Pull request #$pr_number is open and unmerged; the reviewer left $((comments_after - comments_before)) comment(s)."
+  say "Out-of-role attempts that nono denied are listed under each stage's audit above."
+  say "Approving and merging is left to a person: review it in the GitHub UI."
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi

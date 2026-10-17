@@ -10,8 +10,40 @@
   "linux": {
     "af_unix_mediation": "pathname"
   },
+  "filesystem": {
+    "allow": [
+      "$HOME/.pi/reviewer"
+    ],
+    "read_file": [
+      "/demo/bin/pi-agent"
+    ]
+  },
   "network": {
-    "block": true
+    "allow_domain": [
+      "nono-deny-all.invalid"
+    ],
+    "credentials": [
+      "llm"
+    ],
+    "custom_credentials": {
+      "llm": {
+        "upstream": "https://api.anthropic.com",
+        "credential_key": "file:///run/secrets/github/model-api-key",
+        "env_var": "LLM_API_KEY",
+        "inject_header": "x-api-key",
+        "credential_format": "{}",
+        "endpoint_rules": [
+          {
+            "method": "POST",
+            "path": "/v1/messages"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/messages/count_tokens"
+          }
+        ]
+      }
+    }
   },
   "environment": {
     "allow_vars": [
@@ -19,8 +51,18 @@
       "HOME",
       "LANG",
       "LC_*",
-      "TERM"
-    ]
+      "TERM",
+      "AGENT_COMMAND",
+      "MODEL_PROVIDER",
+      "MODEL_ID",
+      "MODEL_API"
+    ],
+    "set_vars": {
+      "PI_CODING_AGENT_DIR": "$HOME/.pi/reviewer",
+      "PI_OFFLINE": "1",
+      "PI_SKIP_VERSION_CHECK": "1",
+      "PI_TELEMETRY": "0"
+    }
   },
   "command_policies": {
     "credentials": {
@@ -178,6 +220,11 @@
                         "method": "DELETE",
                         "path": "/**",
                         "reason": "the reviewer may not delete GitHub resources"
+                      },
+                      {
+                        "method": "*",
+                        "path": "/graphql",
+                        "reason": "the reviewer may not use GraphQL: nono cannot restrict its operations, so a mutation could merge"
                       }
                     ],
                     "allow": [
@@ -196,14 +243,6 @@
                       {
                         "method": "POST",
                         "path": "/repos/nolabs-ai/amazon-webinar-demo/issues/*/comments"
-                      },
-                      {
-                        "method": "POST",
-                        "path": "/repos/nolabs-ai/amazon-webinar-demo/pulls/*/reviews"
-                      },
-                      {
-                        "method": "POST",
-                        "path": "/graphql"
                       }
                     ]
                   }
@@ -223,8 +262,7 @@
                   "http_proxy",
                   "https_proxy",
                   "no_proxy",
-                  "NONO_PROXY_TOKEN",
-                  "SSL_CERT_FILE"
+                  "NONO_PROXY_TOKEN"
                 ],
                 "set_vars": {
                   "GH_CONFIG_DIR": "/tmp/nono-gh-config",
@@ -248,22 +286,6 @@
                 {
                   "argv": {
                     "contains": [
-                      "--request-changes"
-                    ]
-                  },
-                  "reason": "the reviewer may comment or approve but not request changes"
-                },
-                {
-                  "argv": {
-                    "contains": [
-                      "-r"
-                    ]
-                  },
-                  "reason": "the reviewer may comment or approve but not request changes"
-                },
-                {
-                  "argv": {
-                    "contains": [
                       "graphql"
                     ]
                   },
@@ -274,58 +296,10 @@
                 {
                   "argv": {
                     "prefix": [
-                      "issue",
-                      "view"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "view"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "diff"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "checks"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "comment"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
-                      "pr",
-                      "review"
-                    ]
-                  }
-                },
-                {
-                  "argv": {
-                    "prefix": [
                       "api"
                     ]
                   },
-                  "reason": "direct API calls remain constrained by endpoint policy"
+                  "reason": "REST only: endpoint policy constrains method and path, and GraphQL is unavailable"
                 }
               ]
             }
