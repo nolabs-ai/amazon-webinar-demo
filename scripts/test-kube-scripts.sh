@@ -45,7 +45,7 @@ case $1 in
         if [[ ${*: -1} == *failed* ]]; then [[ -z ${FAKE_JOB_FAILED:-} ]] || echo 1
         else [[ -n ${FAKE_JOB_FAILED:-} ]] || echo 1; fi ;;
     esac ;;
-  logs) echo "fake log line" ;;
+  logs) echo "fake log line"; echo "@@ tagged event"; echo "@# machine event" ;;
 esac
 EOF
 cat >"$work/bin/gh" <<'EOF'
@@ -100,6 +100,18 @@ log_file="$work/saved/demo.log"
   --yes --log-file "$log_file" >/dev/null 2>&1 &&
   grep -q 'fake log line' "$log_file" && pass "deploy saves the streamed log" ||
   fail "deploy did not save the log"
+
+reset
+log_file="$work/saved/presenter.log"
+"$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$image" \
+  --yes --view presenter --log-file "$log_file" >"$work/out" 2>&1
+grep -qx 'tagged event' "$work/out" && ! grep -q 'fake log line\|machine event' "$work/out" &&
+  pass "presenter view shows only the tagged events" || fail "presenter view filtering"
+grep -q 'fake log line' "$log_file" && grep -q '^@@ tagged event' "$log_file" &&
+  grep -q '^@# machine event' "$log_file" && pass "the saved log keeps the full stream" ||
+  fail "saved log is incomplete in presenter view"
+grep -q 'value: "presenter"' "$work"/state/applied-* && pass "presenter view turns on the Job's tagged output" ||
+  fail "DEMO_OUTPUT not set for presenter view"
 
 reset
 if "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image registry.example.invalid/demo:latest --yes >/dev/null 2>"$work/err"; then

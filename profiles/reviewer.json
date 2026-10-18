@@ -55,8 +55,7 @@
       "AGENT_COMMAND",
       "MODEL_PROVIDER",
       "MODEL_ID",
-      "MODEL_API",
-      "MODEL_AUTH"
+      "MODEL_API"
     ],
     "set_vars": {
       "PI_CODING_AGENT_DIR": "$HOME/.pi/reviewer",

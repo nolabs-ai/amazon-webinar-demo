@@ -62,6 +62,13 @@ case $1 in
     done
     shift
     role=$(basename "$profile" .json)
+    if [[ $(basename "$1") == cat ]]; then
+      # A credential probe: the real profiles deny these reads.
+      case $2 in
+        */run/secrets/* | "$SECRETS_DIR"/*) [[ -z ${FAKE_LEAK:-} ]] || exec "$@"; exit 1 ;;
+        *) exec "$@" ;;
+      esac
+    fi
     echo "$role $(pwd) ssh_auth_sock=${SSH_AUTH_SOCK:+set}" >>"$FAKE_STATE/nono-runs"
     printf '%s\n' "$profile" >>"$FAKE_STATE/profiles"
     cp "$profile" "$FAKE_STATE/profile-$role.json"
@@ -83,8 +90,22 @@ printf '%s\n' "$*" >"$FAKE_STATE/pi-args-$role"
 [[ ! -f $PI_CODING_AGENT_DIR/models.json ]] ||
   cp "$PI_CODING_AGENT_DIR/models.json" "$FAKE_STATE/models-$role.json"
 echo '{"type":"session","version":3,"id":"x","cwd":"/workspace"}'
+case $role in
+  developer)
+    echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"python3 -m unittest discover -s demo_app"}}'
+    echo '{"type":"tool_execution_end","toolName":"bash","isError":false,"result":{"content":[{"type":"text","text":"Ran 3 tests\n\nOK"}]}}'
+    echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"git switch -c demo/webinar-fix"}}'
+    echo '{"type":"tool_execution_end","toolName":"bash","isError":false,"result":{"content":[{"type":"text","text":"Switched"}]}}'
+    echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"gh api repos/acme/widgets/pulls -f head=demo/webinar-fix -F draft=true --jq .number"}}'
+    echo '{"type":"tool_execution_end","toolName":"bash","isError":false,"result":{"content":[{"type":"text","text":"12"}]}}'
+    ;;
+  reviewer)
+    echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"gh api --method POST repos/acme/widgets/pulls/12/reviews -f event=APPROVE"}}'
+    echo '{"type":"tool_execution_end","toolName":"bash","isError":true,"result":{"content":[{"type":"text","text":"{\"error\":\"Forbidden\"}gh: HTTP 403"}]}}'
+    ;;
+esac
 echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"gh pr merge 12"}}'
-echo '{"type":"tool_execution_end","toolName":"bash","isError":true,"result":{"content":[{"type":"text","text":"nono: command policy denied gh"}]}}'
+echo '{"type":"tool_execution_end","toolName":"bash","isError":true,"result":{"content":[{"type":"text","text":"nono: command policy denied gh: Command '"'"'gh'"'"' is blocked: the agent may not merge pull requests\n\nCommand exited with code 126"}]}}'
 echo 'a stray stderr line' >&2
 case $role in
   developer) [[ -n ${FAKE_NO_PR:-} ]] || touch "$FAKE_STATE/pr" ;;
@@ -116,9 +137,11 @@ case $path in
   repos/acme/widgets/branches/demo/webinar-fix)
     if [[ -e $FAKE_STATE/pr || -n ${FAKE_BRANCH_EXISTS:-} ]]; then body='{}'; else status=404; body='{}'; fi ;;
   repos/acme/widgets/pulls\?*)
-    if [[ -e $FAKE_STATE/pr ]]; then body='[{"number":12}]'; else body='[]'; fi ;;
+    # A PR closed by an earlier reset still matches state=all, never state=open.
+    if [[ $path == *state=all* && -n ${FAKE_STALE_PR:-} ]]; then body='[{"number":2}]'
+    elif [[ -e $FAKE_STATE/pr ]]; then body='[{"number":12}]'; else body='[]'; fi ;;
   repos/acme/widgets/pulls/12)
-    body='{"merged":'"${FAKE_MERGED:-false}"',"html_url":"https://github.com/acme/widgets/pull/12"}' ;;
+    body='{"merged":'"${FAKE_MERGED:-false}"',"state":"open","html_url":"https://github.com/acme/widgets/pull/12"}' ;;
   repos/acme/widgets/issues/12/comments\?*)
     n=0; [[ ! -e $FAKE_STATE/comments ]] || n=$(wc -l <"$FAKE_STATE/comments")
     body=$(jq -n --argjson n "$n" '[range($n) | {id: .}]') ;;
@@ -145,7 +168,9 @@ mkdir -p "$work/remote/acme" "$work/seed"
 git init -q --bare "$work/remote/acme/widgets.git"
 git -C "$work/seed" init -q
 echo fixture >"$work/seed/README"
-git -C "$work/seed" add README
+mkdir -p "$work/seed/demo_app"
+echo 'THRESHOLD = 50' >"$work/seed/demo_app/shipping.py"
+git -C "$work/seed" add README demo_app
 git -C "$work/seed" commit -qm initial
 git -C "$work/seed" push -q "$work/remote/acme/widgets.git" HEAD:refs/heads/main
 
@@ -153,7 +178,6 @@ ssh-keygen -q -t ed25519 -N '' -f "$work/key" -C fixture
 printf 'ghp_FIXTURETOKENNOTREAL0123456789\n' >"$work/secrets/token"
 cp "$work/key" "$work/secrets/ssh-private-key"
 printf 'sk-FIXTUREMODELKEYNOTREAL\n' >"$work/secrets/model-api-key"
-printf '%s\n' '{"anthropic":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":4102444800000}}' >"$work/secrets/model-auth-json"
 # Like the Secret volume: group-readable, which plain `ssh-add <file>` rejects.
 chmod 0440 "$work/secrets"/*
 
@@ -295,37 +319,56 @@ jq -e '.network.custom_credentials.llm
          and (.endpoint_rules | map(.method + " " + .path) == ["POST /chat/completions"])' \
   "$state/profile-reviewer.json" >/dev/null && pass "openai-completions route" ||
   fail "openai-completions route"
+jq -e '.providers.testprov.models[0].compat.supportsStore == false' "$state/models-reviewer.json" >/dev/null &&
+  pass "openai-completions omits unsupported fields" || fail "compat missing for openai-completions"
 jq -e '.providers.testprov.api == "openai-completions"' "$state/models-reviewer.json" >/dev/null &&
   pass "pi-agent passes MODEL_API to Pi" || fail "MODEL_API in models.json"
 run_demo MODEL_API=openai-responses
 jq -e '.network.custom_credentials.llm.endpoint_rules | map(.path) == ["/responses"]' \
   "$state/profile-developer.json" >/dev/null && pass "openai-responses route" ||
   fail "openai-responses route"
+run_demo MODEL_API=google-generative-ai MODEL_ID=gem-test
+jq -e '.network.custom_credentials.llm
+       | .inject_header == "x-goog-api-key" and
+         (.endpoint_rules | map(.path) == ["/models/gem-test:streamGenerateContent", "/models/gem-test:generateContent"])' \
+  "$state/profile-developer.json" >/dev/null && pass "google-generative-ai route" ||
+  fail "google-generative-ai route"
+run_demo STAGE_PAUSE=1
+grep -q 'Pausing 1s between stages' "$work/out" && pass "stage pause" || fail "stage pause"
 run_demo MODEL_API=bogus
 expect_fail "unknown MODEL_API is refused" 'unsupported MODEL_API'
 
-run_demo MODEL_AUTH=oauth MODEL_PROVIDER=anthropic MODEL_ID=claude-sonnet-4-6 \
-  MODEL_UPSTREAM_URL=https://api.anthropic.com
-grep -q 'TEST MODE: Pi can read its OAuth credential' "$work/out" &&
-  pass "OAuth mode is clearly labeled" || fail "OAuth warning missing"
-jq -e '.network.allow_domain == ["api.anthropic.com"] and
-       .network.credentials == [] and .network.custom_credentials == {}' \
-  "$state/profile-developer.json" >/dev/null && pass "OAuth profile bypasses the credential proxy" ||
-  fail "OAuth profile route"
-jq -e '.anthropic.type == "oauth"' "$work/home/.pi/developer/auth.json" >/dev/null &&
-  [[ ! -e $state/models-developer.json ]] && pass "OAuth credential is installed without models.json" ||
-  fail "OAuth Pi configuration"
+# Verbose mode never prints the presenter tags.
+run_demo
+! grep -q '^@[@#]' "$work/out" && pass "no presenter tags in verbose mode" || fail "tags in verbose mode"
 
-chmod 0640 "$work/secrets/model-auth-json"
-printf '%s\n' '{"openai-codex":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":4102444800000}}' >"$work/secrets/model-auth-json"
-run_demo MODEL_AUTH=oauth MODEL_PROVIDER=openai-codex MODEL_ID=gpt-5.5 \
-  MODEL_API=openai-responses MODEL_UPSTREAM_URL=https://chatgpt.com/backend-api
-jq -e '.network.allow_domain == ["chatgpt.com", "auth.openai.com"]' \
-  "$state/profile-reviewer.json" >/dev/null &&
-  jq -e '."openai-codex".type == "oauth"' "$work/home/.pi/reviewer/auth.json" >/dev/null &&
-  pass "Codex OAuth mode is rendered" || fail "Codex OAuth configuration"
-printf '%s\n' '{"anthropic":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":4102444800000}}' >"$work/secrets/model-auth-json"
-chmod 0440 "$work/secrets/model-auth-json"
+# Presenter mode: compact events built from what was observed, plus the full transcript.
+run_demo DEMO_OUTPUT=presenter
+[[ -z ${SHOW_OUTPUT:-} ]] || grep '^@@' "$work/out"
+for pattern in '^@@ SECURE GITHUB AGENTS ON AMAZON EKS' '^@@ \[DEVELOPER\]' '^@@ \[REVIEWER\]' \
+  '^@@ [0-9:]*  ALLOW  Run tests  *tests passed' \
+  '^@@ [0-9:]*  ALLOW  Open draft pull request  *PR #12' \
+  '^@@ [0-9:]*  DENY   Merge pull request  *command policy' \
+  '^@@ [0-9:]*  DENY   Submit approval  *endpoint policy' \
+  '^@@ [0-9:]*  ALLOW  Create branch  *demo/webinar-fix' \
+  '^@@ * the agent may not merge pull requests$' \
+  'the agent may not merge pull requests' \
+  '^@@ .*developer finished in [0-9]*s; nono audit recorded 1 denied command' \
+  '^@@ \[VERIFICATION\]' '^@@ [0-9:]*  PASS   PR #12 is open and unmerged' \
+  '^@@ [0-9:]*  PASS   Reviewer added 1 comment' \
+  '^@@ [0-9:]*  PASS   Credential files unreadable' '^@@ DEMO COMPLETE in' \
+  '^@# developer.open_pr ALLOW PR #12' '^@# reviewer.merge_pr DENY command policy'; do
+  grep -q -- "$pattern" "$work/out" && pass "presenter view: $pattern" || fail "presenter view lacks: $pattern"
+done
+grep -q '^  > bash: gh pr merge 12' "$work/out" && grep -q 'NONO AUDIT: reviewer' "$work/out" &&
+  pass "presenter mode keeps the full transcript" || fail "transcript lost in presenter mode"
+[[ $(grep -c 'DENY   Merge pull request' "$work/out") == 2 ]] &&
+  pass "each stage's merge denial is shown once" || fail "merge denials duplicated or missing"
+# A secret the sandbox let through is a failure, not a pass.
+run_demo DEMO_OUTPUT=presenter FAKE_LEAK=1
+expect_fail "a readable credential fails the run" 'could read the mounted credential'
+grep -q '^@@ .*FAIL .*Demo failed' "$work/out" && pass "failure appears in the presenter view" ||
+  fail "failure missing from the presenter view"
 
 # Failure paths.
 run_demo ISSUE_NUMBER=
@@ -345,6 +388,8 @@ run_demo FAKE_BRANCH_EXISTS=1
 expect_fail "leftover branch is reported" 'already exists'
 run_demo FAKE_NO_PR=1
 expect_fail "no PR is a failure" 'opened no pull request'
+run_demo FAKE_NO_PR=1 FAKE_STALE_PR=1
+expect_fail "a closed PR from an earlier run is not accepted" 'opened no pull request'
 run_demo FAKE_NO_COMMENT=1
 expect_fail "no review comment is a failure" 'left no comment'
 run_demo FAKE_MERGED=true

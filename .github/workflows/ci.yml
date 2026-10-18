@@ -42,6 +42,12 @@ jobs:
       - name: Test cluster scripts (fake kubectl)
         run: scripts/test-kube-scripts.sh
 
+      - name: Test readiness check and node script (fake aws, kubectl and gh)
+        run: scripts/test-check-ready.sh
+
+      - name: Test demo reset (fake GitHub)
+        run: scripts/test-reset-demo.sh
+
       - name: Test profiles
         run: scripts/test-profiles.sh
 
@@ -71,9 +77,9 @@ jobs:
         run: |
           set -euo pipefail
           export IMAGE="registry.example.invalid/demo@sha256:$(printf 'a%.0s' {1..64})" ISSUE_NUMBER=1 GITHUB_REPOSITORY=acme/widgets
-          export MODEL_AUTH=api-key MODEL_PROVIDER=anthropic MODEL_ID=claude-sonnet-5-5
-          export MODEL_API=anthropic-messages MODEL_UPSTREAM_URL=https://api.anthropic.com
-          envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY} ${MODEL_AUTH} ${MODEL_PROVIDER} ${MODEL_ID} ${MODEL_API} ${MODEL_UPSTREAM_URL}' \
+          export MODEL_PROVIDER=anthropic MODEL_ID=claude-sonnet-5-5
+          export MODEL_API=anthropic-messages MODEL_UPSTREAM_URL=https://api.anthropic.com STAGE_PAUSE=0 DEMO_OUTPUT=verbose
+          envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY} ${MODEL_PROVIDER} ${MODEL_ID} ${MODEL_API} ${MODEL_UPSTREAM_URL} ${STAGE_PAUSE} ${DEMO_OUTPUT}' \
             < k8s/job.yaml > "$RUNNER_TEMP/job.yaml"
           ! grep -q '\${' "$RUNNER_TEMP/job.yaml"
           grep -Eq 'image: .+@sha256:[0-9a-f]{64}$' "$RUNNER_TEMP/job.yaml"

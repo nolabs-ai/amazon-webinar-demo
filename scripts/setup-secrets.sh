@@ -4,7 +4,9 @@
 # terminal (never echoed) and sent to the API server over stdin. Nothing is
 # written to disk and nothing is placed in argv or in a manifest.
 #
-#   scripts/setup-secrets.sh [--yes]
+#   scripts/setup-secrets.sh [--yes] [--model-key-only]
+#
+# --model-key-only replaces just the model API key in the existing Secret.
 #
 # Use a disposable repository, a fine-grained token limited to it, and a deploy
 # key (with write access) for the same repository.
@@ -14,11 +16,13 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/kube-common.sh"
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 assume_yes=0
+model_only=0
 
 while (($#)); do
   case $1 in
     -y | --yes) assume_yes=1 ;;
-    -h | --help) sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --model-key-only) model_only=1 ;;
+    -h | --help) sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
@@ -30,6 +34,19 @@ done
 [[ -t 0 ]] || die "run this from a terminal: the secrets are prompted for, not read from a pipe"
 
 require_cluster
+
+if ((model_only)); then
+  kubectl get secret "$secret_name" -n "$namespace" >/dev/null 2>&1 ||
+    die "Secret $namespace/$secret_name not found; run without --model-key-only first"
+  read -r -s -p "Model API key (input hidden): " model_api_key
+  echo
+  [[ -n $model_api_key ]] || die "empty model API key"
+  printf '%s' "$model_api_key" | jq -Rs '{data: {"model-api-key": (. | @base64)}}' |
+    kubectl -n "$namespace" patch secret "$secret_name" --type merge --patch-file /dev/stdin >/dev/null
+  unset model_api_key
+  echo "Secret $namespace/$secret_name: model-api-key replaced; other keys untouched."
+  exit 0
+fi
 
 read -r -s -p "GitHub token (input hidden): " github_token
 echo

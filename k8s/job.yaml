@@ -65,14 +65,18 @@ spec:
             # in /v1) and MODEL_PROVIDER the Pi provider name.
             - name: MODEL_PROVIDER
               value: "${MODEL_PROVIDER}"
-            - name: MODEL_AUTH
-              value: "${MODEL_AUTH}"
             - name: MODEL_ID
               value: "${MODEL_ID}"
             - name: MODEL_API
               value: "${MODEL_API}"
             - name: MODEL_UPSTREAM_URL
               value: "${MODEL_UPSTREAM_URL}"
+            # verbose, or presenter to add the compact tagged view to the stream.
+            - name: DEMO_OUTPUT
+              value: "${DEMO_OUTPUT}"
+            # Optional pause between the stages, for a rate-limited key.
+            - name: STAGE_PAUSE
+              value: "${STAGE_PAUSE}"
           resources:
             requests:
               cpu: "1"
