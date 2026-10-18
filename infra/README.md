@@ -126,4 +126,8 @@ cd infra/terraform
 terraform destroy
 ```
 
-State is local and gitignored. Keep it until the destroy finishes.
+For the webinar account, state is remote in the versioned S3 backend declared
+by `terraform/backend.tf`. Create and verify that file before `init`; applying
+without the intended backend makes the working directory appear to have no
+resources and can attempt to recreate the stack. Keep the backend and state
+until destroy finishes.

@@ -14,9 +14,13 @@ agent under nono.
 - a disposable demo repository containing this repo's content, with an open
   issue (`scripts/create-issue.sh`), a fine-grained GitHub token for it, and a
   deploy key with write access;
-- an API key for an Anthropic-compatible model provider.
+- either an API key for an Anthropic-compatible model provider, or a supported
+  Pi OAuth login for test-only subscription mode.
 
 ## Run it
+
+Use [`../RUNBOOK.md`](../RUNBOOK.md) for the complete, rehearsable procedure.
+The abbreviated lifecycle is:
 
 ```text
 export GITHUB_REPOSITORY=<owner>/<disposable-repo>   # used by create-issue.sh and deploy.sh
@@ -32,8 +36,9 @@ namespace, service account and Job (replacing an earlier Job), streams the logs
 and exits non-zero unless the Job succeeded. The logs hold, per stage, Pi's
 transcript, nono's audit summary and every decision nono denied.
 
-Before rerunning, close the demo pull request and delete the `demo/webinar-fix`
-branch on GitHub; `run-demo` stops early if the branch still exists.
+Before rerunning, use `scripts/reset-demo.sh --repo "$GITHUB_REPOSITORY"` to
+close a demo pull request and delete the exact `demo/webinar-fix` branch;
+`run-demo` stops early if the branch still exists.
 
 ## Files
 
@@ -53,6 +58,7 @@ branch on GitHub; `run-demo` stops early if the branch still exists.
 | `token` | GitHub token; nono's proxy injects it into `api.github.com` requests |
 | `ssh-private-key` | Deploy key, no passphrase; loaded into an `ssh-agent` the agents cannot reach directly |
 | `model-api-key` | Model provider key; nono's proxy injects it into model API calls |
+| `model-auth-json` | Optional Pi Anthropic or OpenAI Codex OAuth credential for test-only subscription mode |
 
 `scripts/setup-secrets.sh` reads them from the terminal without echo and sends
 them to the API server over stdin: no file, no manifest, nothing in argv. Never
@@ -76,6 +82,14 @@ modes: their nono profiles grant no access under `/run/secrets`.
   `/v1` (OpenAI, OpenRouter, vLLM, Ollama). Only the Anthropic route has been
   tested against a real provider. A Bedrock bearer token is a possible later
   variant and is not wired up.
+- **OAuth test mode**: run `scripts/setup-model-oauth.sh`, then deploy with
+  `MODEL_AUTH=oauth` and the matching model settings. Pi uses the saved
+  Anthropic or OpenAI Codex subscription credential directly. This verifies
+  the complete agent workflow without an API key, but unlike normal mode the
+  model credential is readable by Pi and is not brokered by nono. Do not claim
+  model-credential isolation when presenting such a run. The proven fallback
+  used Pi's `openai-codex` provider with `gpt-5.6-sol`; Anthropic subscription
+  OAuth required separately funded extra usage.
 - **Audit**: nono's audit trail lives in an `emptyDir` at
   `/home/node/.local/state/nono`.
 - **Lifetime**: `activeDeadlineSeconds: 2700` bounds a hung run and

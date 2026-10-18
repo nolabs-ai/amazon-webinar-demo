@@ -19,10 +19,9 @@ Kata provides the workload isolation boundary. nono provides finer-grained
 filesystem, command, network, and credential controls for the agents and the
 tools they invoke inside the workload.
 
-The platform (EKS, Kata with a Landlock guest kernel, the agent image and the
-preflight checks) is built and proven on a cluster. The launcher that runs the
-two agents and the model access are written and tested locally but have not yet
-been run end to end on the cluster; see the status in [DEMO.md](DEMO.md).
+The platform and the complete two-agent workflow have been proven on the real
+EKS/Kata environment. See [DEMO.md](DEMO.md) for the evidence and remaining
+production-path verification.
 
 ## Tooling
 
@@ -34,8 +33,9 @@ Infrastructure lives in [infra](infra), [kernel](kernel) and
 [preflight](preflight); the Job and the scripts to run it live in [k8s](k8s) and
 [scripts](scripts). This is a demo, not a production deployment.
 
-See [DEMO.md](DEMO.md) for the demo flow, security boundaries, repository
-layout, status and remaining work, and [k8s/README.md](k8s/README.md) to run it.
+Use [RUNBOOK.md](RUNBOOK.md) as the canonical copy/paste operator guide. See
+[DEMO.md](DEMO.md) for the flow, security boundaries, status and remaining
+work, and [k8s/README.md](k8s/README.md) for workload implementation details.
 
 ## Safety
 

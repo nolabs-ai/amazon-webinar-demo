@@ -10,8 +10,8 @@ trusted launcher `bin/run-demo` runs them one after the other.
 1. A developer agent receives an issue number, fixes the prepared bug, runs the
    tests, commits, pushes `demo/webinar-fix` through `demo-secure`, and opens a
    draft pull request.
-2. A reviewer agent receives the pull-request number, reads the linked issue,
-   diff, and checks, then leaves a comment that opens with a plain-text verdict
+2. A reviewer agent receives the pull-request number, reads the linked issue
+   and diff, reruns the tests, then leaves a comment that opens with a plain-text verdict
    (`Verdict: APPROVE` or `Verdict: CHANGES SUGGESTED`).
 3. Both agents attempt actions outside their roles: the developer tries to
    merge its pull request, the reviewer tries to create a branch, to submit an
@@ -117,31 +117,30 @@ Done and proven on the cluster:
 - Both profiles validate with nono 0.79.0 on Linux. A real sandboxed push to
   `demo/webinar-fix` succeeded through the developer profile; a push to `main`
   was denied before contacting GitHub.
+- The full flow completed in a real Kata pod using Pi with the `openai-codex`
+  provider and subscription OAuth: developer fix, tests, mediated SSH push,
+  draft PR, reviewer comment, denied branch/approval/merge actions, and audit
+  output. The Secret volume mode and ssh-agent key load also worked.
+- A separate live Kata validation exercised both profiles' filesystem,
+  cross-role directory, command, GitHub REST, GraphQL, merge, approval, raw
+  Secret, SSH, and network boundaries; all checks passed.
+- Local/CI tests cover the launcher, Kubernetes scripts, profiles, and image.
 
-Written and tested locally, but not yet run on the cluster:
+Still to prove before the final presentation:
 
-- The launcher, the Pi wrapper and the new profile rules, tested here with fake
-  nono, Pi and GitHub (`scripts/test-run-demo.sh`) and, for the model route, on
-  a macOS nono 0.79.0 build.
-- On Linux, `scripts/test-profiles.sh` covers the model key, the REST-only gh
-  policy and the comment-only reviewer in CI.
-
-Not yet proven end to end:
-
-- Pi, under the sandbox, reaching the model through nono's proxy and completing
-  the task (paths Pi needs, loopback proxy with `NO_PROXY`, `af_unix_mediation`).
-- The full flow with real GitHub: push, draft PR through `gh api`, the reviewer's
-  comment, the denied attempts, and the audit output in `kubectl logs`.
-- The Secret volume mode (`0440`) and the ssh-agent key load on the cluster.
+- One full E2E run with a funded model API key. That is the presentation path
+  that demonstrates nono brokering the model credential; the successful OAuth
+  run deliberately allowed Pi to read its OAuth credential directly.
+- Three clean reset-to-reset rehearsals and a recorded backup.
 
 ## Remaining work
 
-1. Rebuild the image, create the Secret and run `scripts/deploy.sh` once; fix
-   whatever the first end-to-end run shows (the commands are in
-   [k8s/README.md](k8s/README.md)).
-2. Rehearse the flow a few times against the disposable repository and decide
-   what to show live (the logs, `nono audit show`, `nono why`).
-3. Open question for review: the GraphQL gap above, and whether the demo should
-   accept the loss of `gh pr create/comment` for it.
+1. Obtain a funded, capped model API key and complete the API-key E2E run.
+2. Run three clean rehearsals using `RUNBOOK.md` and retain a successful log and
+   recording.
+3. Resolve or explicitly accept the documented GraphQL, sentinel-domain, and
+   git/SSH child-network tradeoffs.
+4. Reissue expiring GitHub credentials and merge the implementation only after
+   CI and the final rehearsals pass.
 
 No credentials belong in this repository or in the container image.
