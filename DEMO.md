@@ -83,9 +83,9 @@ Residual gaps, stated plainly:
 - `.github/workflows/ci.yml` lints the scripts, tests the launcher and the
   cluster scripts with fakes, validates and tests the nono profiles, and
   validates the manifests.
-- `bin/` contains the trusted launcher `run-demo` and the in-sandbox Pi wrapper
-  `pi-agent`.
-- `config/` contains the pinned GitHub SSH host key.
+- `bin/` contains the trusted launcher `run-demo`, the in-sandbox Pi wrapper
+  `pi-agent`, and `render-events.jq` (transcript and presenter view).
+- `config/` contains the pinned GitHub SSH host key and `webinar.env`.
 - `demo_app/` contains the small application and prepared bug.
 - `infra/`, `kernel/` and `preflight/` describe, build and check the EKS Kata
   node, the Landlock guest kernel and the runtime contract.
@@ -93,54 +93,19 @@ Residual gaps, stated plainly:
 - `profiles/` contains the developer and reviewer nono policies.
 - `prompts/` contains the parameterized agent instructions.
 - `scenario/` contains the prepared issue text.
-- `scripts/` builds the image, creates the issue and the Secret, deploys and
+- `scripts/` builds the image, creates the issue and the Secret, runs and
   tears down the Job, and holds the tests.
+- `docs/` holds the improvement backlog.
 - `Containerfile`, `NONO_VERSION`, and `PI_VERSION` define the agent image and
   pinned runtime versions.
 
-## Running it
+## Status
 
-See [k8s/README.md](k8s/README.md). In short: `scripts/build-image.sh`,
-`scripts/setup-secrets.sh`, `scripts/create-issue.sh`, `scripts/deploy.sh`.
-
-## Current status
-
-Done and proven on the cluster:
-
-- The AWS account, EKS cluster, Kata runtime with a custom Landlock guest
-  kernel, and the image build and push (`scripts/build-image.sh`).
-- The preflight pod passes all 16 checks, including Landlock enforcement on a
-  virtio-fs `emptyDir`, the credential proxy, command mediation and the
-  ssh-agent broker.
-- Both profiles set `linux.af_unix_mediation = "pathname"`; a pathname Unix
-  socket a sandboxed process needs must be granted with `filesystem.unix_socket`.
-- Both profiles validate with nono 0.79.0 on Linux. A real sandboxed push to
-  `demo/webinar-fix` succeeded through the developer profile; a push to `main`
-  was denied before contacting GitHub.
-- The full flow completed in a real Kata pod using Pi with the `openai-codex`
-  provider and subscription OAuth: developer fix, tests, mediated SSH push,
-  draft PR, reviewer comment, denied branch/approval/merge actions, and audit
-  output. The Secret volume mode and ssh-agent key load also worked.
-- A separate live Kata validation exercised both profiles' filesystem,
-  cross-role directory, command, GitHub REST, GraphQL, merge, approval, raw
-  Secret, SSH, and network boundaries; all checks passed.
-- Local/CI tests cover the launcher, Kubernetes scripts, profiles, and image.
-
-Still to prove before the final presentation:
-
-- One full E2E run with a funded model API key. That is the presentation path
-  that demonstrates nono brokering the model credential; the successful OAuth
-  run deliberately allowed Pi to read its OAuth credential directly.
-- Three clean reset-to-reset rehearsals and a recorded backup.
-
-## Remaining work
-
-1. Obtain a funded, capped model API key and complete the API-key E2E run.
-2. Run three clean rehearsals using `RUNBOOK.md` and retain a successful log and
-   recording.
-3. Resolve or explicitly accept the documented GraphQL, sentinel-domain, and
-   git/SSH child-network tradeoffs.
-4. Reissue expiring GitHub credentials and merge the implementation only after
-   CI and the final rehearsals pass.
+Proven on the real EKS/Kata cluster: the platform preflight (16 checks), a live
+adversarial validation of both profiles, and a complete two-agent run. That run
+used a test-only login rather than the brokered API key, so the presentation
+path (nono injecting the model key) is still to be shown; the remaining steps
+are the readiness gate in [RUNBOOK.md](RUNBOOK.md). Known tradeoffs are listed
+above and in the claims section of [PRESENTER_GUIDE.md](PRESENTER_GUIDE.md).
 
 No credentials belong in this repository or in the container image.
