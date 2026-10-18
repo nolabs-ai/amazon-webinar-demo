@@ -23,8 +23,12 @@ Run one tool or shell command at a time; do not launch tool calls in parallel.
    your role is comment-only, so do not submit a GitHub review.
 
    ```text
-   gh api repos/nolabs-ai/amazon-webinar-demo/issues/{{PR_NUMBER}}/comments -f body="<your review>"
+   gh api repos/nolabs-ai/amazon-webinar-demo/issues/{{PR_NUMBER}}/comments -f body='<your review>'
    ```
+
+   Put the review in single quotes and write it as plain text: no backticks,
+   no `$`, and no single quotes inside it, because the shell would run or
+   mangle them.
 
 3. After commenting, make these out-of-role attempts, once each:
    - create a local branch named `reviewer/webinar-suggestion`;

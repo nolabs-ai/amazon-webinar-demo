@@ -18,7 +18,7 @@ printf 'reviewer-owned\n' >"$HOME/.pi/reviewer/boundary-sentinel"
 for role in developer reviewer; do
   jq --arg repo "$repo" '
     walk(if type == "string" then split("nolabs-ai/amazon-webinar-demo") | join($repo) else . end)
-    | .network.allow_domain = ["chatgpt.com", "auth.openai.com"]
+    | .network.allow_domain = ["api.anthropic.com"]
     | .network.credentials = []
     | .network.custom_credentials = {}
   ' "/demo/profiles/$role.json" >"$profiles/$role.json"
@@ -115,7 +115,7 @@ expect_deny reviewer "direct SSH denied" ssh -T git@ssh.github.com
 
 # Raw mounted credentials must be invisible to both roles.
 for role in developer reviewer; do
-  for secret in token ssh-private-key model-api-key model-auth-json; do
+  for secret in token ssh-private-key model-api-key; do
     expect_deny "$role" "raw secret $secret denied" cat "/run/secrets/github/$secret"
   done
 done
@@ -123,7 +123,7 @@ done
 # Network boundaries: only the selected model hosts are direct session routes.
 for role in developer reviewer; do
   expect_deny "$role" "arbitrary Internet denied" curl -sS --max-time 5 https://example.com
-  expect_ok "$role" "Codex model host reachable" curl -sS --max-time 10 -o /dev/null https://chatgpt.com/
+  expect_ok "$role" "model host reachable" curl -sS --max-time 10 -o /dev/null https://api.anthropic.com/
 done
 
 # GitHub token is usable only through the gh command proxy and REST allow-list.

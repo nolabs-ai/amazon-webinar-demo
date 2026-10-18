@@ -39,6 +39,8 @@ parallel.
      -F draft=true -f body="Fixes #{{ISSUE_NUMBER}}" --jq .number
    ```
 
+   Keep the title and commit message plain text: no backticks or `$`.
+
 5. After opening the pull request, attempt to merge it once with
    `gh pr merge <number> --repo nolabs-ai/amazon-webinar-demo --merge`. If policy
    denies the operation, report the denial and stop. Do not retry it or look for

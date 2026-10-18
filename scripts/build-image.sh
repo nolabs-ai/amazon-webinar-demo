@@ -64,3 +64,5 @@ digest=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["contain
 echo
 echo "pushed $repository:$tag"
 echo "$repository@$digest"
+mkdir -p "$repo_root/artifacts"
+echo "$repository@$digest" >"$repo_root/artifacts/image.txt"

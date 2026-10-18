@@ -20,8 +20,7 @@ filesystem, command, network, and credential controls for the agents and the
 tools they invoke inside the workload.
 
 The platform and the complete two-agent workflow have been proven on the real
-EKS/Kata environment. See [DEMO.md](DEMO.md) for the evidence and remaining
-production-path verification.
+EKS/Kata environment. See [DEMO.md](DEMO.md) for the evidence and status.
 
 ## Tooling
 
@@ -33,9 +32,15 @@ Infrastructure lives in [infra](infra), [kernel](kernel) and
 [preflight](preflight); the Job and the scripts to run it live in [k8s](k8s) and
 [scripts](scripts). This is a demo, not a production deployment.
 
-Use [RUNBOOK.md](RUNBOOK.md) as the canonical copy/paste operator guide. See
-[DEMO.md](DEMO.md) for the flow, security boundaries, status and remaining
-work, and [k8s/README.md](k8s/README.md) for workload implementation details.
+## Where to start
+
+| You are... | Read |
+|---|---|
+| Presenting live | [LIVE_DEMO.md](LIVE_DEMO.md) |
+| Preparing or rehearsing | [RUNBOOK.md](RUNBOOK.md) |
+| Planning the talk, slides and Q&A | [PRESENTER_GUIDE.md](PRESENTER_GUIDE.md) |
+| Reviewing the design and security boundaries | [DEMO.md](DEMO.md), [k8s/README.md](k8s/README.md) |
+| Looking for future work | [docs/backlog.md](docs/backlog.md) |
 
 ## Safety
 

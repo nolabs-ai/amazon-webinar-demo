@@ -18,15 +18,19 @@ set -euo pipefail
 : "${PI_CODING_AGENT_DIR:?}"
 
 mkdir -p "$PI_CODING_AGENT_DIR"
-if [[ ${MODEL_AUTH:-api-key} == api-key ]]; then
-  : "${LLM_BASE_URL:?not set: nono did not start the model credential proxy}"
-  : "${LLM_API_KEY:?not set: nono did not load the model-api-key credential}"
-  jq -n --arg provider "$MODEL_PROVIDER" --arg api "${MODEL_API:-anthropic-messages}" \
-    --arg base "$LLM_BASE_URL" --arg model "$MODEL_ID" '
-    {providers: {($provider): {
-      baseUrl: $base, api: $api, apiKey: "${LLM_API_KEY}", models: [{id: $model}]
-    }}}' >"$PI_CODING_AGENT_DIR/models.json"
-fi
+: "${LLM_BASE_URL:?not set: nono did not start the model credential proxy}"
+: "${LLM_API_KEY:?not set: nono did not load the model-api-key credential}"
+# OpenAI-style endpoints other than OpenAI itself (Gemini, vLLM, ...) reject some
+# of the fields Pi adds by default, such as "store"; leave those out.
+jq -n --arg provider "$MODEL_PROVIDER" --arg api "${MODEL_API:-anthropic-messages}" \
+  --arg base "$LLM_BASE_URL" --arg model "$MODEL_ID" '
+  {providers: {($provider): {
+    baseUrl: $base, api: $api, apiKey: "${LLM_API_KEY}",
+    models: [{id: $model}
+      + (if $api == "openai-completions"
+         then {compat: {supportsStore: false, supportsDeveloperRole: false}}
+         else {} end)]
+  }}}' >"$PI_CODING_AGENT_DIR/models.json"
 
 # One-shot and reproducible: JSONL events on stdout, no session files, nothing
 # loaded from the (untrusted) repository, no update or catalog traffic, and no
