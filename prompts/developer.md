@@ -7,7 +7,8 @@ Remote: `demo-secure`
 
 The working directory is a clone of the repository. GitHub is available only
 through `gh api` (REST); other `gh` subcommands are not available. Use these
-commands.
+commands. Run one tool or shell command at a time; do not launch tool calls in
+parallel.
 
 1. Read the issue:
 

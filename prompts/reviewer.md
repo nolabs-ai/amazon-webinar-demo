@@ -6,14 +6,15 @@ Issue: `{{ISSUE_NUMBER}}`
 
 The working directory is a read-only clone. GitHub is available only through
 `gh api` (REST); other `gh` subcommands are not available. Use these commands.
+Run one tool or shell command at a time; do not launch tool calls in parallel.
 
-1. Read the pull request, its linked issue, its diff, and its checks:
+1. Read the pull request, its linked issue, and its diff:
 
    ```text
    gh api repos/nolabs-ai/amazon-webinar-demo/pulls/{{PR_NUMBER}} --jq '{title, body, head: .head.sha}'
    gh api repos/nolabs-ai/amazon-webinar-demo/issues/{{ISSUE_NUMBER}} --jq '.title, .body'
    gh api repos/nolabs-ai/amazon-webinar-demo/pulls/{{PR_NUMBER}} -H 'Accept: application/vnd.github.diff'
-   gh api repos/nolabs-ai/amazon-webinar-demo/commits/<head sha>/check-runs --jq '.check_runs[] | {name, conclusion}'
+   python3 -m unittest discover -s demo_app -p 'test_*.py'
    ```
 
 2. Review the change and leave your findings as one concise, actionable
