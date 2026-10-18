@@ -71,7 +71,11 @@ jobs:
         run: |
           set -euo pipefail
           export IMAGE="registry.example.invalid/demo@sha256:$(printf 'a%.0s' {1..64})" ISSUE_NUMBER=1 GITHUB_REPOSITORY=acme/widgets
-          envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY}' < k8s/job.yaml > "$RUNNER_TEMP/job.yaml"
+          export MODEL_AUTH=api-key MODEL_PROVIDER=anthropic MODEL_ID=claude-sonnet-5-5
+          export MODEL_API=anthropic-messages MODEL_UPSTREAM_URL=https://api.anthropic.com
+          envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY} ${MODEL_AUTH} ${MODEL_PROVIDER} ${MODEL_ID} ${MODEL_API} ${MODEL_UPSTREAM_URL}' \
+            < k8s/job.yaml > "$RUNNER_TEMP/job.yaml"
+          ! grep -q '\${' "$RUNNER_TEMP/job.yaml"
           grep -Eq 'image: .+@sha256:[0-9a-f]{64}$' "$RUNNER_TEMP/job.yaml"
           kubeconform -strict -summary -kubernetes-version 1.35.0 \
             k8s/namespace.yaml k8s/service-account.yaml k8s/secret.example.yaml "$RUNNER_TEMP/job.yaml"

@@ -64,13 +64,15 @@ spec:
             # MODEL_UPSTREAM_URL is the provider's base URL (OpenAI-style ones end
             # in /v1) and MODEL_PROVIDER the Pi provider name.
             - name: MODEL_PROVIDER
-              value: anthropic
+              value: "${MODEL_PROVIDER}"
+            - name: MODEL_AUTH
+              value: "${MODEL_AUTH}"
             - name: MODEL_ID
-              value: claude-sonnet-5-5
+              value: "${MODEL_ID}"
             - name: MODEL_API
-              value: anthropic-messages
+              value: "${MODEL_API}"
             - name: MODEL_UPSTREAM_URL
-              value: https://api.anthropic.com
+              value: "${MODEL_UPSTREAM_URL}"
           resources:
             requests:
               cpu: "1"

@@ -80,7 +80,8 @@ cat >"$fakes/pi" <<'EOF'
 set -euo pipefail
 role=$(basename "$PI_CODING_AGENT_DIR")
 printf '%s\n' "$*" >"$FAKE_STATE/pi-args-$role"
-cp "$PI_CODING_AGENT_DIR/models.json" "$FAKE_STATE/models-$role.json"
+[[ ! -f $PI_CODING_AGENT_DIR/models.json ]] ||
+  cp "$PI_CODING_AGENT_DIR/models.json" "$FAKE_STATE/models-$role.json"
 echo '{"type":"session","version":3,"id":"x","cwd":"/workspace"}'
 echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"gh pr merge 12"}}'
 echo '{"type":"tool_execution_end","toolName":"bash","isError":true,"result":{"content":[{"type":"text","text":"nono: command policy denied gh"}]}}'
@@ -152,6 +153,7 @@ ssh-keygen -q -t ed25519 -N '' -f "$work/key" -C fixture
 printf 'ghp_FIXTURETOKENNOTREAL0123456789\n' >"$work/secrets/token"
 cp "$work/key" "$work/secrets/ssh-private-key"
 printf 'sk-FIXTUREMODELKEYNOTREAL\n' >"$work/secrets/model-api-key"
+printf '%s\n' '{"anthropic":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":4102444800000}}' >"$work/secrets/model-auth-json"
 # Like the Secret volume: group-readable, which plain `ssh-add <file>` rejects.
 chmod 0440 "$work/secrets"/*
 
@@ -301,6 +303,29 @@ jq -e '.network.custom_credentials.llm.endpoint_rules | map(.path) == ["/respons
   fail "openai-responses route"
 run_demo MODEL_API=bogus
 expect_fail "unknown MODEL_API is refused" 'unsupported MODEL_API'
+
+run_demo MODEL_AUTH=oauth MODEL_PROVIDER=anthropic MODEL_ID=claude-sonnet-4-6 \
+  MODEL_UPSTREAM_URL=https://api.anthropic.com
+grep -q 'TEST MODE: Pi can read its OAuth credential' "$work/out" &&
+  pass "OAuth mode is clearly labeled" || fail "OAuth warning missing"
+jq -e '.network.allow_domain == ["api.anthropic.com"] and
+       .network.credentials == [] and .network.custom_credentials == {}' \
+  "$state/profile-developer.json" >/dev/null && pass "OAuth profile bypasses the credential proxy" ||
+  fail "OAuth profile route"
+jq -e '.anthropic.type == "oauth"' "$work/home/.pi/developer/auth.json" >/dev/null &&
+  [[ ! -e $state/models-developer.json ]] && pass "OAuth credential is installed without models.json" ||
+  fail "OAuth Pi configuration"
+
+chmod 0640 "$work/secrets/model-auth-json"
+printf '%s\n' '{"openai-codex":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":4102444800000}}' >"$work/secrets/model-auth-json"
+run_demo MODEL_AUTH=oauth MODEL_PROVIDER=openai-codex MODEL_ID=gpt-5.5 \
+  MODEL_API=openai-responses MODEL_UPSTREAM_URL=https://chatgpt.com/backend-api
+jq -e '.network.allow_domain == ["chatgpt.com", "auth.openai.com"]' \
+  "$state/profile-reviewer.json" >/dev/null &&
+  jq -e '."openai-codex".type == "oauth"' "$work/home/.pi/reviewer/auth.json" >/dev/null &&
+  pass "Codex OAuth mode is rendered" || fail "Codex OAuth configuration"
+printf '%s\n' '{"anthropic":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":4102444800000}}' >"$work/secrets/model-auth-json"
+chmod 0440 "$work/secrets/model-auth-json"
 
 # Failure paths.
 run_demo ISSUE_NUMBER=

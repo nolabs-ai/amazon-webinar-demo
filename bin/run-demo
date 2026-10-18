@@ -93,6 +93,21 @@ render_prompt() {
 # MODEL_UPSTREAM_URL ends in /v1). Everything else is untouched.
 render_profile() {
   local header format paths
+  if [[ $MODEL_AUTH == oauth ]]; then
+    local domains
+    case $MODEL_PROVIDER in
+      anthropic) domains='["api.anthropic.com"]' ;;
+      openai-codex) domains='["chatgpt.com", "auth.openai.com"]' ;;
+      *) die "MODEL_AUTH=oauth does not support MODEL_PROVIDER=$MODEL_PROVIDER" ;;
+    esac
+    jq --arg from "$template_repo" --arg repo "$GITHUB_REPOSITORY" --argjson domains "$domains" '
+      walk(if type == "string" then split($from) | join($repo) else . end)
+      | .network.allow_domain = $domains
+      | .network.credentials = []
+      | .network.custom_credentials = {}
+    ' "$1" >"$2"
+    return
+  fi
   case $MODEL_API in
     anthropic-messages)
       header=x-api-key format='{}' paths='["/v1/messages", "/v1/messages/count_tokens"]' ;;
@@ -236,6 +251,7 @@ count_comments() {
 
 prepare_inputs() {
   local name file
+  export MODEL_AUTH=${MODEL_AUTH:-api-key}
   require_env GITHUB_REPOSITORY ISSUE_NUMBER GIT_REMOTE GIT_BRANCH AGENT_COMMAND \
     MODEL_PROVIDER MODEL_ID MODEL_UPSTREAM_URL HOME
   export MODEL_API=${MODEL_API:-anthropic-messages}
@@ -255,9 +271,22 @@ prepare_inputs() {
   for name in nono git ssh-agent ssh-add jq curl timeout "$AGENT_COMMAND"; do
     command -v "$name" >/dev/null || die "required command not found: $name"
   done
-  for file in token ssh-private-key model-api-key; do
+  for file in token ssh-private-key; do
     require_file "$secrets_dir/$file"
   done
+  case $MODEL_AUTH in
+    api-key) require_file "$secrets_dir/model-api-key" ;;
+    oauth)
+      [[ $MODEL_PROVIDER == anthropic || $MODEL_PROVIDER == openai-codex ]] ||
+        die "MODEL_AUTH=oauth supports MODEL_PROVIDER=anthropic or openai-codex"
+      require_file "$secrets_dir/model-auth-json"
+      jq -e --arg provider "$MODEL_PROVIDER" \
+        '.[$provider].type == "oauth" and (.[$provider].access | type == "string") and (.[$provider].refresh | type == "string")' \
+        "$secrets_dir/model-auth-json" >/dev/null 2>&1 ||
+        die "$secrets_dir/model-auth-json has no valid $MODEL_PROVIDER OAuth credential"
+      ;;
+    *) die "unsupported MODEL_AUTH '$MODEL_AUTH' (api-key or oauth)" ;;
+  esac
   [[ -x $demo_dir/bin/pi-agent ]] || die "$demo_dir/bin/pi-agent is missing or not executable"
 
   audit_dir=${XDG_STATE_HOME:-$HOME/.local/state}/nono
@@ -267,6 +296,13 @@ prepare_inputs() {
 
   run_dir=$(mktemp -d "$HOME/.demo-run.XXXXXX")
   mkdir -p "$HOME/.pi/developer" "$HOME/.pi/reviewer" "$run_dir/profiles"
+  if [[ $MODEL_AUTH == oauth ]]; then
+    for name in developer reviewer; do
+      jq --arg provider "$MODEL_PROVIDER" '{($provider): .[$provider]}' \
+        "$secrets_dir/model-auth-json" >"$HOME/.pi/$name/auth.json"
+      chmod 0600 "$HOME/.pi/$name/auth.json"
+    done
+  fi
 }
 
 check_issue() {
@@ -332,7 +368,12 @@ main() {
   export NO_COLOR=1
   banner "WEBINAR DEMO: ${GITHUB_REPOSITORY:-?} issue #${ISSUE_NUMBER:-?}"
   prepare_inputs
-  say "nono $(nono --version | awk '{print $2}'), model ${MODEL_PROVIDER}/${MODEL_ID} via ${MODEL_UPSTREAM_URL} (key brokered by nono)"
+  if [[ $MODEL_AUTH == oauth ]]; then
+    say "nono $(nono --version | awk '{print $2}'), model ${MODEL_PROVIDER}/${MODEL_ID} via subscription OAuth"
+    say "TEST MODE: Pi can read its OAuth credential; model authentication is not brokered by nono in this run."
+  else
+    say "nono $(nono --version | awk '{print $2}'), model ${MODEL_PROVIDER}/${MODEL_ID} via ${MODEL_UPSTREAM_URL} (key brokered by nono)"
+  fi
   say "Audit directory: $audit_dir"
 
   local role problems

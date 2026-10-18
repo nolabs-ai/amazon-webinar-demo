@@ -55,7 +55,8 @@
       "AGENT_COMMAND",
       "MODEL_PROVIDER",
       "MODEL_ID",
-      "MODEL_API"
+      "MODEL_API",
+      "MODEL_AUTH"
     ],
     "set_vars": {
       "PI_CODING_AGENT_DIR": "$HOME/.pi/developer",
