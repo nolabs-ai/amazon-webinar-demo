@@ -62,7 +62,9 @@ owner=${repo%%/*}
 prs=$(gh api "repos/$repo/pulls?state=open&head=$owner:$branch" --jq '.[].number')
 has_branch=0
 gh api "repos/$repo/git/ref/heads/$branch" >/dev/null 2>&1 && has_branch=1
-base_sha=$(gh api "repos/$repo/git/ref/tags/$baseline_tag" --jq .object.sha 2>/dev/null || true)
+# A missing tag makes gh print the 404 body and fail; keep only a real commit id.
+base_sha=$(gh api "repos/$repo/git/ref/tags/$baseline_tag" --jq .object.sha 2>/dev/null) || base_sha=
+[[ $base_sha =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] || base_sha=
 main_moved=0
 [[ -z $base_sha || $base_sha == "$main_sha" ]] || main_moved=1
 

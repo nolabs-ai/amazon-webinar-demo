@@ -27,7 +27,8 @@ done
 echo "$method $path ${args[*]:-}" >>"$s/calls"
 case "$method $path" in
   "GET repos/o/r/git/ref/heads/main") cat "$s/main" ;;
-  "GET repos/o/r/git/ref/tags/demo-baseline") [[ -f $s/baseline ]] && cat "$s/baseline" || exit 1 ;;
+  "GET repos/o/r/git/ref/tags/demo-baseline")
+    if [[ -f $s/baseline ]]; then cat "$s/baseline"; else echo '{"message":"Not Found","status":"404"}'; exit 1; fi ;;
   "GET repos/o/r/git/ref/heads/demo/webinar-fix") [[ -f $s/branch ]] || exit 1 ;;
   "GET repos/o/r/pulls?state=open&head=o:demo/webinar-fix") [[ ! -f $s/prs ]] || cat "$s/prs" ;;
   "PATCH repos/o/r/pulls/"*) rm -f "$s/prs" ;;
@@ -40,6 +41,7 @@ FAKE
 chmod +x "$work/bin/gh"
 export PATH=$work/bin:$PATH FAKE_STATE=$work/state
 
+A=$(printf "a%.0s" {1..40}) B=$(printf "b%.0s" {1..40}) C=$(printf "c%.0s" {1..40})
 failures=0
 pass() { echo "PASS: $1"; }
 fail() {
@@ -55,38 +57,39 @@ setup() { # main baseline(or empty) prs branch(0/1)
 }
 reset() { "$repo_root/scripts/reset-demo.sh" --repo o/r --yes "$@" >"$work/out" 2>&1; }
 
-setup aaa111 aaa111 "" 0
+setup "$A" "$A" "" 0
 reset && grep -q 'Already reset' "$work/out" && ! grep -q 'PATCH\|DELETE' "$work/state/calls" &&
   pass "clean repo: nothing to do and nothing changed" || fail "clean repo"
 
-setup aaa111 aaa111 "7" 1
+setup "$A" "$A" "7" 1
 reset && grep -q 'Open PRs:   #7' "$work/out" && grep -q 'Closed PR #7' "$work/out" &&
   grep -q 'Deleted demo/webinar-fix' "$work/out" && ! grep -q 'Restored main' "$work/out" &&
-  [[ $(cat "$work/state/main") == aaa111 ]] && pass "PR closed and branch deleted; main untouched" ||
+  [[ $(cat "$work/state/main") == "$A" ]] && pass "PR closed and branch deleted; main untouched" ||
   { fail "PR and branch reset"; cat "$work/out" >&2; }
 
-setup bbb222 aaa111 "" 0
-reset && grep -q 'Restored main to aaa111' "$work/out" && [[ $(cat "$work/state/main") == aaa111 ]] &&
+setup "$B" "$A" "" 0
+reset && grep -q 'Restored main to aaaaaaa' "$work/out" && [[ $(cat "$work/state/main") == "$A" ]] &&
   pass "a merged main is restored to the baseline" || { fail "main restore"; cat "$work/out" >&2; }
-grep -q 'PATCH repos/o/r/git/refs/heads/main sha=aaa111 force=true' "$work/state/calls" &&
+grep -q "PATCH repos/o/r/git/refs/heads/main sha=$A force=true" "$work/state/calls" &&
   pass "main is force-updated to the baseline commit" || fail "force update call"
 
-setup bbb222 "" "" 0
-reset && grep -q 'no demo-baseline tag' "$work/out" && [[ $(cat "$work/state/main") == bbb222 ]] &&
+setup "$B" "" "" 0
+reset && grep -q 'no demo-baseline tag' "$work/out" && [[ $(cat "$work/state/main") == "$B" ]] &&
+  ! grep -q 'PATCH repos/o/r/git/refs/heads/main' "$work/state/calls" && ! grep -q 'will be restored' "$work/out" &&
   pass "without a baseline tag main is left alone and the user is told" || fail "no baseline"
 
-setup ccc333 "" "" 0
-reset --set-baseline && [[ $(cat "$work/state/baseline") == ccc333 ]] &&
+setup "$C" "" "" 0
+reset --set-baseline && [[ $(cat "$work/state/baseline") == "$C" ]] &&
   pass "--set-baseline tags the current main" || fail "set-baseline"
 reset --set-baseline && fail "set-baseline overwrote an existing tag" ||
   { grep -q 'already exists' "$work/out" && pass "--set-baseline refuses to move an existing tag"; }
 
 # Without --yes and without a terminal the reset must not run.
-setup bbb222 aaa111 "" 0
+setup "$B" "$A" "" 0
 if "$repo_root/scripts/reset-demo.sh" --repo o/r </dev/null >"$work/out" 2>&1; then
   fail "reset ran without confirmation"
 else
-  grep -q 'not a terminal' "$work/out" && [[ $(cat "$work/state/main") == bbb222 ]] &&
+  grep -q 'not a terminal' "$work/out" && [[ $(cat "$work/state/main") == "$B" ]] &&
     pass "no confirmation, no change" || fail "unconfirmed reset message"
 fi
 
