@@ -95,6 +95,13 @@ grep -q 'delete job github-agents-demo' "$work/state/argv" &&
 grep -q 'fake log line' "$work/out" && pass "logs are streamed" || fail "no logs"
 
 reset
+log_file="$work/saved/demo.log"
+"$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$image" \
+  --yes --log-file "$log_file" >/dev/null 2>&1 &&
+  grep -q 'fake log line' "$log_file" && pass "deploy saves the streamed log" ||
+  fail "deploy did not save the log"
+
+reset
 if "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image registry.example.invalid/demo:latest --yes >/dev/null 2>"$work/err"; then
   fail "deploy accepted a tag"
 else

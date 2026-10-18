@@ -3,7 +3,7 @@
 # the demo's logs.
 #
 #   scripts/deploy.sh --repo <owner/name> --issue <number> \
-#       --image <repo>@sha256:<digest> [--yes] [--no-logs]
+#       --image <repo>@sha256:<digest> [--yes] [--no-logs] [--log-file <path>]
 #
 # --repo is the disposable GitHub repository the agents work in (also
 # GITHUB_REPOSITORY); there is deliberately no default, so a run can never
@@ -20,9 +20,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/kube-common.sh"
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 assume_yes=0
 follow=1
+log_file=
 IMAGE=${IMAGE:-}
 ISSUE_NUMBER=${ISSUE_NUMBER:-}
 GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
+MODEL_AUTH=${MODEL_AUTH:-api-key}
+MODEL_PROVIDER=${MODEL_PROVIDER:-anthropic}
+MODEL_ID=${MODEL_ID:-claude-sonnet-5-5}
+MODEL_API=${MODEL_API:-anthropic-messages}
+MODEL_UPSTREAM_URL=${MODEL_UPSTREAM_URL:-https://api.anthropic.com}
 
 usage() { sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
@@ -33,6 +39,7 @@ while (($#)); do
     --image) IMAGE=${2:?missing value for $1}; shift ;;
     -y | --yes) assume_yes=1 ;;
     --no-logs) follow=0 ;;
+    --log-file) log_file=${2:?missing value for $1}; shift ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown argument: $1" ;;
   esac
@@ -44,10 +51,12 @@ done
 [[ $ISSUE_NUMBER =~ ^[1-9][0-9]*$ ]] || die "--issue must be a positive integer"
 [[ $IMAGE =~ @sha256:[0-9a-f]{64}$ ]] ||
   die "--image must be pinned by digest (repo@sha256:...), as printed by scripts/build-image.sh"
+[[ $MODEL_AUTH == api-key || $MODEL_AUTH == oauth ]] ||
+  die "MODEL_AUTH must be api-key or oauth"
 command -v envsubst >/dev/null || die "envsubst not found (gettext)"
 
 require_cluster
-export IMAGE ISSUE_NUMBER GITHUB_REPOSITORY
+export IMAGE ISSUE_NUMBER GITHUB_REPOSITORY MODEL_AUTH MODEL_PROVIDER MODEL_ID MODEL_API MODEL_UPSTREAM_URL
 
 kubectl get secret "$secret_name" -n "$namespace" >/dev/null 2>&1 ||
   die "Secret $namespace/$secret_name not found; run scripts/setup-secrets.sh first"
@@ -58,7 +67,8 @@ kubectl apply -f "$repo_root/k8s/namespace.yaml" -f "$repo_root/k8s/service-acco
 # Jobs are immutable: a rerun replaces the old one (and with it its logs).
 kubectl delete job "$job_name" -n "$namespace" --ignore-not-found --wait=true
 # shellcheck disable=SC2016  # envsubst takes the variable names literally
-envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY}' <"$repo_root/k8s/job.yaml" | kubectl apply -f -
+envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY} ${MODEL_AUTH} ${MODEL_PROVIDER} ${MODEL_ID} ${MODEL_API} ${MODEL_UPSTREAM_URL}' \
+  <"$repo_root/k8s/job.yaml" | kubectl apply -f -
 echo "Job $namespace/$job_name started: $GITHUB_REPOSITORY issue #$ISSUE_NUMBER, image $IMAGE"
 
 ((follow)) || exit 0
@@ -80,7 +90,13 @@ while :; do
   sleep 3
 done
 
-kubectl logs -f -n "$namespace" "job/$job_name" || true
+if [[ -n $log_file ]]; then
+  mkdir -p "$(dirname "$log_file")"
+  kubectl logs -f -n "$namespace" "job/$job_name" | tee "$log_file" || true
+  echo "Log saved to $log_file"
+else
+  kubectl logs -f -n "$namespace" "job/$job_name" || true
+fi
 
 # The log stream ends when the container does; report how the Job ended.
 for _ in $(seq 1 30); do

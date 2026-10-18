@@ -37,3 +37,4 @@ tmp/
 kernel/out/
 kernel/.work/
 preflight-result.txt
+artifacts/
