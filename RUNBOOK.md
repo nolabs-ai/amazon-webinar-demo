@@ -154,6 +154,28 @@ MODEL_ID=<model-id> \
 scripts/run-webinar.sh --latest
 ```
 
+### Using Amazon Bedrock (no model key to supply)
+
+Bedrock's Mantle endpoint is regional, so inference stays in the demo account's
+region. It is authenticated with a short-term Bedrock API key minted from your AWS
+login (up to 12 hours, so mint it just before a run) and written into the Secret:
+
+```text
+aws sso login --profile admin-webinar
+AWS_PROFILE=admin-webinar scripts/setup-secrets.sh --bedrock-key
+MODEL_PROVIDER=bedrock MODEL_API=openai-completions \
+MODEL_UPSTREAM_URL=https://bedrock-mantle.eu-west-1.api.aws/v1 \
+MODEL_ID=openai.gpt-oss-120b \
+scripts/run-webinar.sh --latest
+```
+
+`MODEL_ID` is any ID from `GET /v1/models` on that endpoint (call it with the key as
+a bearer token). Claude models use the Messages API instead:
+`MODEL_API=anthropic-messages-bearer` with
+`MODEL_UPSTREAM_URL=https://bedrock-mantle.eu-west-1.api.aws/anthropic`. Which
+models you can call depends on the agreements accepted for the account
+(`aws bedrock get-foundation-model-availability --model-id <id>`).
+
 On a free-tier key with a per-minute quota, add `STAGE_PAUSE=60` to wait between the
 two stages. The model key in the Secret must belong to the provider you name here.
 Only the Anthropic route has been proven against a real provider; Gemini's native

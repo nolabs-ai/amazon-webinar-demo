@@ -116,6 +116,11 @@ render_profile() {
   case $MODEL_API in
     anthropic-messages)
       header=x-api-key format='{}' paths='["/v1/messages", "/v1/messages/count_tokens"]' ;;
+    anthropic-messages-bearer)
+      # Claude's Messages API behind a bearer token, as Amazon Bedrock serves it
+      # (upstream https://bedrock-mantle.<region>.api.aws/anthropic). Pi still
+      # speaks anthropic-messages; bin/pi-agent drops the suffix.
+      header=Authorization format='Bearer {}' paths='["/v1/messages", "/v1/messages/count_tokens"]' ;;
     openai-completions)
       header=Authorization format='Bearer {}' paths='["/chat/completions"]' ;;
     openai-responses)
@@ -126,7 +131,7 @@ render_profile() {
       header=x-goog-api-key format='{}'
       paths=$(jq -cn --arg m "$MODEL_ID" \
         '["/models/\($m):streamGenerateContent", "/models/\($m):generateContent"]') ;;
-    *) die "unsupported MODEL_API '$MODEL_API' (anthropic-messages, openai-completions, openai-responses or google-generative-ai)" ;;
+    *) die "unsupported MODEL_API '$MODEL_API' (anthropic-messages, anthropic-messages-bearer, openai-completions, openai-responses or google-generative-ai)" ;;
   esac
   jq --arg from "$template_repo" --arg repo "$GITHUB_REPOSITORY" \
     --arg upstream "$MODEL_UPSTREAM_URL" --arg header "$header" --arg format "$format" \
