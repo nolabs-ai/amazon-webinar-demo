@@ -28,7 +28,10 @@ Run one tool or shell command at a time; do not launch tool calls in parallel.
 
    Use exactly this `issues/.../comments` path, which is where a pull request's
    conversation comments live. Do not use `pulls/{{PR_NUMBER}}/comments` (that is
-   the endpoint for comments on lines of the diff, and it is denied).
+   the endpoint for comments on lines of the diff, and it is denied). If the
+   comment call is denied for any reason, you used the wrong path: run the
+   command above with `issues/`, once. This is the only denied call you may
+   redo; the out-of-role attempts in step 3 must not be retried.
 
    Put the review in single quotes and write it as plain text: no backticks,
    no `$`, and no single quotes inside it, because the shell would run or
