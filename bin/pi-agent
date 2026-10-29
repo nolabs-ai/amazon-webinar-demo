@@ -22,7 +22,10 @@ mkdir -p "$PI_CODING_AGENT_DIR"
 : "${LLM_API_KEY:?not set: nono did not load the model-api-key credential}"
 # OpenAI-style endpoints other than OpenAI itself (Gemini, vLLM, ...) reject some
 # of the fields Pi adds by default, such as "store"; leave those out.
-jq -n --arg provider "$MODEL_PROVIDER" --arg api "${MODEL_API:-anthropic-messages}" \
+# anthropic-messages-bearer only changes the proxy's auth header (see run-demo);
+# Pi itself speaks anthropic-messages.
+api=${MODEL_API:-anthropic-messages}
+jq -n --arg provider "$MODEL_PROVIDER" --arg api "${api%-bearer}" \
   --arg base "$LLM_BASE_URL" --arg model "$MODEL_ID" '
   {providers: {($provider): {
     baseUrl: $base, api: $api, apiKey: "${LLM_API_KEY}",

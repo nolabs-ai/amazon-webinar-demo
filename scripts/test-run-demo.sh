@@ -323,6 +323,15 @@ jq -e '.providers.testprov.models[0].compat.supportsStore == false' "$state/mode
   pass "openai-completions omits unsupported fields" || fail "compat missing for openai-completions"
 jq -e '.providers.testprov.api == "openai-completions"' "$state/models-reviewer.json" >/dev/null &&
   pass "pi-agent passes MODEL_API to Pi" || fail "MODEL_API in models.json"
+run_demo MODEL_API=anthropic-messages-bearer MODEL_UPSTREAM_URL=https://bedrock-mantle.eu-west-1.api.aws/anthropic
+jq -e '.network.custom_credentials.llm
+       | .inject_header == "Authorization" and .credential_format == "Bearer {}"
+         and .upstream == "https://bedrock-mantle.eu-west-1.api.aws/anthropic"
+         and (.endpoint_rules | map(.path) == ["/v1/messages", "/v1/messages/count_tokens"])' \
+  "$state/profile-developer.json" >/dev/null && pass "anthropic-messages-bearer route" ||
+  fail "anthropic-messages-bearer route"
+jq -e '.providers.testprov.api == "anthropic-messages"' "$state/models-reviewer.json" >/dev/null &&
+  pass "bearer variant is still anthropic-messages for Pi" || fail "bearer variant api for Pi"
 run_demo MODEL_API=openai-responses
 jq -e '.network.custom_credentials.llm.endpoint_rules | map(.path) == ["/responses"]' \
   "$state/profile-developer.json" >/dev/null && pass "openai-responses route" ||

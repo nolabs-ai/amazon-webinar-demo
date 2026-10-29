@@ -60,6 +60,8 @@ modes: their nono profiles grant no access under `/run/secrets`.
   select the provider (the default is Anthropic); its key goes in the Secret.
   The launcher renders the proxy route from them: `anthropic-messages` injects
   `x-api-key` and allows `POST /v1/messages` (+ `count_tokens`);
+  `anthropic-messages-bearer` is the same Claude route with `Authorization: Bearer`
+  (Amazon Bedrock, upstream `https://bedrock-mantle.<region>.api.aws/anthropic`);
   `google-generative-ai` injects `x-goog-api-key` and allows `POST /models/<id>:streamGenerateContent`
   below an upstream ending in `/v1beta`;
   `openai-completions` and `openai-responses` inject `Authorization: Bearer` and

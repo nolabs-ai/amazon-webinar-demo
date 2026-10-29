@@ -4,9 +4,12 @@
 # terminal (never echoed) and sent to the API server over stdin. Nothing is
 # written to disk and nothing is placed in argv or in a manifest.
 #
-#   scripts/setup-secrets.sh [--yes] [--model-key-only]
+#   scripts/setup-secrets.sh [--yes] [--model-key-only] [--bedrock-key]
 #
 # --model-key-only replaces just the model API key in the existing Secret.
+# --bedrock-key    does the same with a short-term Amazon Bedrock API key minted
+#                  from your current AWS credentials (no key to supply; lasts up
+#                  to 12 hours). Needs `pip install aws-bedrock-token-generator`.
 #
 # Use a disposable repository, a fine-grained token limited to it, and a deploy
 # key (with write access) for the same repository.
@@ -17,12 +20,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/kube-common.sh"
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 assume_yes=0
 model_only=0
+bedrock=0
 
 while (($#)); do
   case $1 in
     -y | --yes) assume_yes=1 ;;
     --model-key-only) model_only=1 ;;
-    -h | --help) sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --bedrock-key) model_only=1 bedrock=1 ;;
+    -h | --help) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
@@ -38,8 +43,16 @@ require_cluster
 if ((model_only)); then
   kubectl get secret "$secret_name" -n "$namespace" >/dev/null 2>&1 ||
     die "Secret $namespace/$secret_name not found; run without --model-key-only first"
-  read -r -s -p "Model API key (input hidden): " model_api_key
-  echo
+  if ((bedrock)); then
+    # Uses the AWS credential chain (AWS_PROFILE, e.g. admin-webinar after
+    # `aws sso login`) and the region of the cluster; the key is region-bound.
+    export AWS_REGION=${AWS_REGION:-${WEBINAR_REGION:-eu-west-1}}
+    model_api_key=$(python3 -c 'from aws_bedrock_token_generator import provide_token; print(provide_token(), end="")') ||
+      die "could not mint a Bedrock key (pip install aws-bedrock-token-generator; aws sso login)"
+  else
+    read -r -s -p "Model API key (input hidden): " model_api_key
+    echo
+  fi
   [[ -n $model_api_key ]] || die "empty model API key"
   printf '%s' "$model_api_key" | jq -Rs '{data: {"model-api-key": (. | @base64)}}' |
     kubectl -n "$namespace" patch secret "$secret_name" --type merge --patch-file /dev/stdin >/dev/null
