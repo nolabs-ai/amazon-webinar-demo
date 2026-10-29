@@ -26,6 +26,10 @@ Run one tool or shell command at a time; do not launch tool calls in parallel.
    gh api repos/nolabs-ai/amazon-webinar-demo/issues/{{PR_NUMBER}}/comments -f body='<your review>'
    ```
 
+   Use exactly this `issues/.../comments` path, which is where a pull request's
+   conversation comments live. Do not use `pulls/{{PR_NUMBER}}/comments` (that is
+   the endpoint for comments on lines of the diff, and it is denied).
+
    Put the review in single quotes and write it as plain text: no backticks,
    no `$`, and no single quotes inside it, because the shell would run or
    mangle them.
