@@ -118,6 +118,11 @@ scripts/run-webinar.sh --latest       # rehearsal: newest build
 scripts/run-webinar.sh                # live: the frozen image in config/image
 ```
 
+To measure reliability instead of trusting one run, `scripts/rehearse.sh -n 10 --latest`
+(or without `--latest` for the frozen image) runs the Job repeatedly, resets between
+runs and prints a pass/fail table (seconds, FAIL lines, denials, and why a run failed).
+Mint a fresh model key first if you use Bedrock.
+
 The live command is the presenter's exact command. It replaces the previous Job, waits for
 the Kata pod, and shows the compact presenter view (`ALLOW`, `DENY`, `PASS`,
 `FAIL` lines with elapsed time). The complete transcript and nono audit are
@@ -158,7 +163,9 @@ scripts/run-webinar.sh --latest
 
 Bedrock's Mantle endpoint is regional, so inference stays in the demo account's
 region. It is authenticated with a short-term Bedrock API key minted from your AWS
-login (up to 12 hours, so mint it just before a run) and written into the Secret:
+login and written into the Secret. The key is tied to your AWS session and in
+practice stopped working after about an hour, so mint it right before a run or a
+rehearsal batch, not the day before:
 
 ```text
 aws sso login --profile admin-webinar

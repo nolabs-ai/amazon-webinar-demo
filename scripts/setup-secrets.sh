@@ -8,8 +8,9 @@
 #
 # --model-key-only replaces just the model API key in the existing Secret.
 # --bedrock-key    does the same with a short-term Amazon Bedrock API key minted
-#                  from your current AWS credentials (no key to supply; lasts up
-#                  to 12 hours). Needs `pip install aws-bedrock-token-generator`.
+#                  from your current AWS credentials (no key to supply). It is
+#                  tied to the AWS session and lasts about an hour in practice.
+#                  Needs `pip install aws-bedrock-token-generator`.
 #
 # Use a disposable repository, a fine-grained token limited to it, and a deploy
 # key (with write access) for the same repository.
@@ -27,7 +28,7 @@ while (($#)); do
     -y | --yes) assume_yes=1 ;;
     --model-key-only) model_only=1 ;;
     --bedrock-key) model_only=1 bedrock=1 ;;
-    -h | --help) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
