@@ -25,7 +25,7 @@ printf '%s\n' "$*" >>"$FAKE_STATE/argv"
 case $1 in
   config)
     case $2 in
-      current-context) [[ -z ${FAKE_NO_CONTEXT:-} ]] || exit 1; echo fake-context ;;
+      current-context) [[ -z ${FAKE_NO_CONTEXT:-} ]] || exit 1; echo "${FAKE_CONTEXT:-fake-context}" ;;
       view) echo https://fake.example.invalid ;;
     esac ;;
   cluster-info) [[ -z ${FAKE_NO_CLUSTER:-} ]] || exit 1 ;;
@@ -146,6 +146,13 @@ if FAKE_NO_CLUSTER=1 "$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 
 else
   grep -q 'cannot reach the cluster' "$work/err" && pass "deploy refuses an unreachable cluster" || fail "cluster message"
 fi
+
+# ---- the cluster guard masks the AWS account ID --------------------------------------
+reset
+out=$(FAKE_CONTEXT=arn:aws:eks:eu-west-1:123456789012:cluster/demo "$repo_root/scripts/teardown.sh" --yes 2>&1)
+if grep -q 'kubectl context: arn:aws:eks:eu-west-1:\*\{12\}:cluster/demo' <<<"$out" && ! grep -q 123456789012 <<<"$out"; then
+  pass "the cluster guard masks the account ID"
+else fail "the cluster guard prints the account ID"; fi
 
 # ---- teardown.sh -----------------------------------------------------------------
 reset

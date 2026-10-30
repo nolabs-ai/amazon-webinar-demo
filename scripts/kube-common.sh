@@ -21,7 +21,8 @@ require_cluster() {
   kubectl cluster-info --request-timeout=15s >/dev/null 2>&1 ||
     die "cannot reach the cluster for context '$context'"
   server=$(kubectl config view --minify -o 'jsonpath={.clusters[0].cluster.server}' 2>/dev/null || true)
-  echo "kubectl context: $context"
+  # The context ARN carries the AWS account ID; mask it so the guard can be shown on screen.
+  echo "kubectl context: $(sed -E 's/[0-9]{12}/************/g' <<<"$context")"
   echo "API server:      ${server:-unknown}"
   if [[ ${assume_yes:-0} != 1 ]]; then
     [[ -t 0 ]] || die "not a terminal; pass --yes to confirm the cluster above"
