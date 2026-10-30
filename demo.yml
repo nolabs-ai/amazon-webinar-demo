@@ -8,7 +8,7 @@
 # playing it: aws sso login, mint the model key (scripts/setup-secrets.sh
 # --bedrock-key, valid about an hour), and check scripts/check-ready.sh says READY.
 # No narration on screen: say it yourself (PRESENTER_GUIDE.md has the claims).
-prompt: "{green}demo{reset} {blue}${reset}"
+prompt: "{green}demo{reset} {blue}${reset} "
 clear: true
 speed: 22
 jitter: 30
@@ -33,15 +33,12 @@ teardown:
 steps:
   - text: 'gh issue view 1 --repo "$GITHUB_REPOSITORY"'
 
-  - text: "kubectl get nodes -o wide"
+  - text: "kubectl get nodes -o wide -L katacontainers.io/kata-runtime"
   - text: "kubectl get runtimeclass kata-clh"
 
   # Not frozen yet: --latest runs the newest build. Once an image is frozen
   # (scripts/freeze-image.sh), drop --latest to run the frozen digest.
-  - text: "scripts/run-webinar.sh --latest"
-    interact:
-      - expect: "Use this cluster"
-        send: "y"
+  - text: "scripts/run-webinar.sh --latest --yes"
     wait_for: "DEMO COMPLETE|DEMO FAILED"
     timeout: 240
 

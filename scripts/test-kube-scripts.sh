@@ -154,6 +154,16 @@ if grep -q 'kubectl context: arn:aws:eks:eu-west-1:\*\{12\}:cluster/demo' <<<"$o
   pass "the cluster guard masks the account ID"
 else fail "the cluster guard prints the account ID"; fi
 
+# ---- deploy.sh masks the account ID in the registry host it prints --------------------
+reset
+acct_image=123456789012.dkr.ecr.eu-west-1.amazonaws.com/demo@$digest
+"$repo_root/scripts/deploy.sh" --repo acme/widgets --issue 7 --image "$acct_image" --yes >"$work/out" 2>&1
+job=$(cat "$work"/state/applied-* 2>/dev/null || true)
+if grep -q 'image \*\{12\}\.dkr\.ecr' "$work/out" && ! grep -q 123456789012 "$work/out" &&
+  grep -q "image: $acct_image\$" <<<"$job"; then
+  pass "deploy masks the account ID on screen but deploys the real image"
+else fail "deploy prints the account ID or changed the image"; fi
+
 # ---- teardown.sh -----------------------------------------------------------------
 reset
 "$repo_root/scripts/teardown.sh" --yes >/dev/null 2>&1 &&

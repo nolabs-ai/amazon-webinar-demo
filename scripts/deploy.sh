@@ -74,7 +74,7 @@ kubectl delete job "$job_name" -n "$namespace" --ignore-not-found --wait=true
 # shellcheck disable=SC2016  # envsubst takes the variable names literally
 envsubst '${IMAGE} ${ISSUE_NUMBER} ${GITHUB_REPOSITORY} ${MODEL_PROVIDER} ${MODEL_ID} ${MODEL_API} ${MODEL_UPSTREAM_URL} ${STAGE_PAUSE} ${DEMO_OUTPUT}' \
   <"$repo_root/k8s/job.yaml" | kubectl apply -f -
-echo "Job $namespace/$job_name started: $GITHUB_REPOSITORY issue #$ISSUE_NUMBER, image $IMAGE"
+echo "Job $namespace/$job_name started: $GITHUB_REPOSITORY issue #$ISSUE_NUMBER, image $(sed -E 's/[0-9]{12}/************/g' <<<"$IMAGE")"
 
 ((follow)) || exit 0
 
