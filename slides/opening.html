@@ -435,7 +435,7 @@
     </div>
     <div class="secret">
       <div class="card"><span class="tag warm">Unreadable</span><p>The token, SSH deploy key and model API key files are mounted in the pod, yet neither agent can read them.</p></div>
-      <div class="card"><span class="tag">Same pattern</span><p>The model key works identically: the agent may only <code>POST /v1/messages</code> through the proxy.</p></div>
+      <div class="card"><span class="tag">Same pattern</span><p>The model key works identically: the agent may only call one inference path through the proxy.</p></div>
     </div>
   </section>
 
@@ -508,7 +508,7 @@
         </div>
       </div>
       <div class="ext">
-        <div class="card"><h3>Model API</h3><p>Key brokered by nono; <code>POST /v1/messages</code> only</p></div>
+        <div class="card"><h3>Amazon Bedrock</h3><p>Key brokered by nono; one inference path only</p></div>
         <div class="card"><h3>GitHub REST API</h3><p>One shared token, filtered per role by method and path</p></div>
         <div class="card"><h3>GitHub SSH</h3><p>Developer only; one repository, one branch</p></div>
         <div class="card"><h3>A human</h3><p>Approves and merges, under their own identity</p></div>
