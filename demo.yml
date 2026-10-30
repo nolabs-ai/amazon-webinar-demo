@@ -1,0 +1,56 @@
+# Command autofill for the live demo, played by demonator
+# (https://github.com/nolabs-ai/demonator):
+#
+#   demonator            # from the repository root; Enter runs each step
+#   demonator --dry-run  # preview the flow without executing anything
+#
+# The commands are real and run for real; only the typing is simulated. Before
+# playing it: aws sso login, mint the model key (scripts/setup-secrets.sh
+# --bedrock-key, valid about an hour), and check scripts/check-ready.sh says READY.
+# No narration on screen: say it yourself (PRESENTER_GUIDE.md has the claims).
+prompt: "{green}demo{reset} {blue}${reset} "
+clear: true
+speed: 22
+jitter: 30
+highlight: true
+show_exit_status: false
+
+env:
+  AWS_PROFILE: admin-webinar
+  AWS_REGION: eu-west-1
+  GITHUB_REPOSITORY: MateSaary/webinar-demo-sandbox
+  MODEL_PROVIDER: bedrock
+  MODEL_API: openai-completions
+  MODEL_UPSTREAM_URL: https://bedrock-mantle.eu-west-1.api.aws/v1
+  MODEL_ID: qwen.qwen3-coder-next
+
+# Silent: leave the disposable repository at the state the demo starts from.
+setup:
+  - scripts/reset-demo.sh --repo MateSaary/webinar-demo-sandbox --yes
+teardown:
+  - scripts/reset-demo.sh --repo MateSaary/webinar-demo-sandbox --yes
+
+steps:
+  - text: 'gh issue view 1 --repo "$GITHUB_REPOSITORY"'
+
+  - text: "kubectl get nodes -o wide -L katacontainers.io/kata-runtime"
+  - text: "kubectl get runtimeclass kata-clh"
+
+  # Not frozen yet: --latest runs the newest build. Once an image is frozen
+  # (scripts/freeze-image.sh), drop --latest to run the frozen digest.
+  - text: "scripts/run-webinar.sh --latest --yes"
+    wait_for: "DEMO COMPLETE|DEMO FAILED"
+    timeout: 240
+
+  - text: 'gh pr list --repo "$GITHUB_REPOSITORY" --head demo/webinar-fix'
+  - text: 'gh pr list --repo "$GITHUB_REPOSITORY" --head demo/webinar-fix --json number --jq ".[0].number"'
+    hidden: true
+    capture:
+      name: pr
+      pattern: "(\\d+)"
+  - text: 'gh pr view {pr} --repo "$GITHUB_REPOSITORY" --comments'
+  - text: 'gh pr diff {pr} --repo "$GITHUB_REPOSITORY"'
+
+  # Merge the PR yourself in the browser, then press Enter: the teardown resets
+  # the repository (and closes the PR) when the script ends.
+  - pause
